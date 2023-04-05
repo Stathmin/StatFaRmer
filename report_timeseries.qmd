@@ -1,0 +1,44 @@
+---
+title: "Report timeseries"
+format: html
+editor: visual
+params:
+  project_path: '.'
+---
+
+```{r}
+#| label: load-packages
+#| include: false
+
+library(tidyverse)
+```
+
+```{r}
+#| label: plot-series
+#| warning: false
+#| echo: false
+#| fig.keep: 'all'
+#| results: 'asis'
+
+
+selected_table <- readRDS(paste0(params$project_path,"/.cache/selected_table.rds"))
+
+columns <- readRDS(paste0(params$project_path,"/.cache/columns.rds"))
+
+
+
+for (column in columns) {
+  cat("## Column:",column,"\n\n")
+  sub_table <- selected_table %>% 
+    dplyr::filter(trait == !!column) %>% 
+    dplyr::rename(!!column := 'trait_value')
+  sub_table %>% 
+    ggplot2::ggplot(ggplot2::aes(x = timestamp,
+                                 y = !!ggplot2::sym(column))) + 
+    ggplot2::geom_point() + 
+    ggplot2::scale_x_datetime() -> gg_plot
+  plot(gg_plot)
+}
+
+
+```
