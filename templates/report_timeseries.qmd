@@ -2,16 +2,7 @@
 title: "Report timeseries"
 format: html
 editor: visual
-params:
-  project_path: '.'
 ---
-
-```{r}
-#| label: load-packages
-#| include: false
-
-library(tidyverse)
-```
 
 ```{r}
 #| label: plot-series
@@ -20,12 +11,11 @@ library(tidyverse)
 #| fig.keep: 'all'
 #| results: 'asis'
 
+`%>%` <- magrittr::`%>%`
 
-selected_table <- readRDS(paste0(params$project_path,"/.cache/selected_table.rds"))
+selected_table <- readRDS(paste0(here::here(),"/.cache/selected_table.rds"))
 
-columns <- readRDS(paste0(params$project_path,"/.cache/columns.rds"))
-
-
+columns <- readRDS(paste0(here::here(),"/.cache/columns.rds"))
 
 for (column in columns) {
   cat("## Column:",column,"\n\n")

@@ -1,0 +1,10 @@
+project:
+  output-dir: ./reports/
+
+toc: true
+number-sections: true
+
+
+format:
+  html:
+    html-math-method: katex
