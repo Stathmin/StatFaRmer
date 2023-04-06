@@ -1,7 +1,13 @@
 ---
-title: "Report timeseries"
-format: html
+title: "Report `r params$report_title`"
+format:
+  html:
+    theme: journal
+    output-dir: reports
+    embed-resources: true
 editor: visual
+params:
+  report_title: 'default'
 ---
 
 ```{r}
@@ -10,6 +16,9 @@ editor: visual
 #| echo: false
 #| fig.keep: 'all'
 #| results: 'asis'
+
+library("ggplot2")
+library("patchwork")
 
 `%>%` <- magrittr::`%>%`
 
@@ -22,12 +31,31 @@ for (column in columns) {
   sub_table <- selected_table %>% 
     dplyr::filter(trait == !!column) %>% 
     dplyr::rename(!!column := 'trait_value')
+  
   sub_table %>% 
     ggplot2::ggplot(ggplot2::aes(x = timestamp,
                                  y = !!ggplot2::sym(column))) + 
     ggplot2::geom_point() + 
-    ggplot2::scale_x_datetime() -> gg_plot
-  plot(gg_plot)
+    ggplot2::scale_x_datetime() +
+    ggplot2::theme_classic() +
+    ggplot2::theme(panel.background = ggplot2::element_rect(fill = "#fef8d6"),
+                    axis.ticks.length.y = ggplot2::unit(0, "pt"),
+                    axis.text.y = ggplot2::element_blank(),
+                    axis.title.y = ggplot2::element_blank()) -> timeseries_plot
+  
+  sub_table %>% 
+    ggplot2::ggplot(ggplot2::aes(y = !!ggplot2::sym(column))) +
+    ggplot2::geom_density(fill = "black",
+                          alpha = 0.2,
+                          color = "black") +
+    ggplot2::theme_classic() +
+    ggplot2::theme(axis.ticks.x = ggplot2::element_blank(),
+                   axis.text.x = ggplot2::element_blank(),
+                   axis.title.x = ggplot2::element_blank(),
+                   axis.line.x = ggplot2::element_blank()
+                   ) -> dist_plot
+  
+  plot(dist_plot + timeseries_plot + patchwork::plot_layout(widths = c(1, 8)))
 }
 
 

@@ -1,5 +1,3 @@
-
-
 # install libraries -------------------------------------------------------
 
 # install.packages('tidyverse')
@@ -12,6 +10,8 @@
 # install.packages("rmarkdown")
 # install.packages("quarto")
 # install.packages("here")
+# install.packages('patchwork')
+# install.packages("openxlsx")
 
 # load libraries ----------------------------------------------------------
 
@@ -26,7 +26,11 @@
 # library("rmarkdown")
 # library("quarto")
 # library("here")
+# library("patchwork")
+# library("openxlsx")
 
+
+renv::activate()
 here::i_am("README.md")
 `%>%` <- magrittr::`%>%`
 
@@ -117,17 +121,22 @@ group_keys <- groups_table %>%
 sym_diff(unit_keys, group_keys) #sym_difference keys seem legit
 
 
-merged_table <- merged_table %>% #58380    58
+merged_table <- merged_table %>%
   dplyr::left_join(groups_table, by = 'var')
 
 dim(merged_table) #58380    58
 
-merged_table %>%
-  dplyr::select(-'treatment.x') %>%
-  dplyr::rename(treatment = treatment.y)
-
 merged_table <- merged_table %>%
-  dplyr::mutate(timestamp = as.POSIXct(timestamp, tz = "UTC"))
+  dplyr::select(-treatment.x) %>%
+  dplyr::rename(treatment = treatment.y) %>% 
+  dplyr::mutate(timestamp = as.POSIXct(timestamp, tz = "UTC")) %>% 
+  dplyr::mutate(
+    treatment = as.character(treatment),
+    repetition = as.character(repetition),
+    plant = as.character(plant)
+  )
+
+dim(merged_table) #58380    57
 
 
 # selected time interval, filtration --------------------------------------
@@ -138,17 +147,8 @@ selected_table <- merged_table %>%
     timestamp <= as.POSIXct("2022-04-01 15:00:00", tz = "UTC")
   )
 
-selected_table <- selected_table %>%
-  dplyr::select(-treatment.x) %>%
-  dplyr::rename(treatment = treatment.y) %>%
-  dplyr::mutate(
-    treatment = as.character(treatment),
-    repetition = as.character(repetition),
-    plant = as.character(plant)
-  )
-
 string_colnames <- selected_table %>%
-  dplyr::select(where(\(x) ! is.numeric(x) &
+  dplyr::select(where(\(x) !is.numeric(x) &
                         !lubridate::is.timepoint(x))) %>%
   colnames
 
@@ -158,15 +158,17 @@ numeric_colnames <- selected_table %>%
   colnames
 
 selected_table <- selected_table %>%
-  dplyr::relocate(all_of(string_colnames), .before = timestamp)
-
-selected_table <- selected_table %>%
+  dplyr::relocate(all_of(string_colnames), .before = timestamp) %>%
   dplyr::mutate(total_numeric = rowSums(pick(where(is.numeric)),
                                         na.rm = TRUE)) %>%
-  dplyr::filter(total_numeric != 0)
+  dplyr::filter(total_numeric != 0) %>% 
+  dplyr::select(-total_numeric) #remove rows full of zeroes
 
 selected_table <- selected_table %>%
-  tidyr::drop_na(p_ngr5, ppd, rht_b1) #ONLY GROUPED VARS, 912 × 58
+  tidyr::drop_na(p_ngr5, ppd, rht_b1) #KEEP ONLY PLANTS WITH KNOWN GT, 456  57
+
+
+# pivot selected table ---------------------------------------------------------
 
 selected_table <- selected_table %>%
   tidyr::pivot_longer(all_of(numeric_colnames),
@@ -178,12 +180,20 @@ selected_table <- selected_table %>%
                       names_to = 'grouping_gene',
                       values_to = 'group_number')
 
+# report data from the time interval, raw ---------------------------------
+
 saveRDS(selected_table, file = ".cache/selected_table.rds")
 saveRDS(numeric_colnames, file = ".cache/columns.rds")
 
-quarto::quarto_render("templates/report_timeseries.qmd" ,
-                      output_file = "report_timerseries.html",)
-
+{
+file.copy(from = "templates/report_timeseries.qmd",
+          to = "report_timeseries.qmd",
+          overwrite = TRUE)
+quarto::quarto_render("report_timeseries.qmd" ,
+                      output_file = "report_timerseries_before_normalization.html",
+                      execute_params = list('report_title' = 'before normalization and logit'))
+file.remove("report_timeseries.qmd")
+}
 
 simple_summarize <- selected_table %>%
   dplyr::group_by(trait, grouping_gene, group_number, treatment) %>%
@@ -196,8 +206,6 @@ simple_summarize <- selected_table %>%
     cv_percent = 100 * mean(trait_value, na.rm = TRUE) /
       sd(trait_value, na.rm = TRUE),
   )
-
-
 
 models_table <- selected_table %>% #first linear models
   dplyr::group_by(trait, grouping_gene) %>%
@@ -212,9 +220,63 @@ lsmeans_table <- models_table %>%
 hard_summarize <- lsmeans_table %>% tidyr::unnest(lsm_each)
 
 
-# hard_summarize %>%
-#   dplyr::left_join(simple_summarize,
-#                    by = c('trait', 'grouping_gene',
-#                           'group_number', 'treatment')) %>% 
-#   dplyr::select(!model) %>% 
-#   write.csv('/results/stat_table.csv')
+hard_summarize %>%
+  dplyr::left_join(simple_summarize,
+                   by = c('trait', 'grouping_gene',
+                          'group_number', 'treatment')) %>%
+  dplyr::select(!model) %>%
+  openxlsx::write.xlsx('reports/before_normalization.xlsx')
+
+
+# percentage to logit -----------------------------------------------------
+
+fix_perc_imprecision <- \(x) case_when(
+  (x >= 0) & (x <=  1.00) ~ x,
+  (x <  0) & (x >= -0.01) ~ 0,
+  (x >  1) & (x <=  1.01) ~ 1,
+  .default = NA)
+
+logit_table <- selected_table %>%
+  dplyr::mutate(trait_value = ifelse(stringi::stri_detect_fixed(trait,
+                                                                '_percent'),
+                              stats::qlogis(fix_perc_imprecision(trait_value)),
+                              trait_value)) %>% 
+  dplyr::mutate(trait = stringi::stri_replace_all_fixed(trait,
+                                                 pattern = 'percent', 
+                                                 replacement = 'logit')
+         ) #logit transform for all percent data, fixing percents from range -0.01 to 1.01
+
+logit_table %>% 
+  dplyr::filter(stringi::stri_detect_fixed(trait, 'logit')) %>% 
+  dplyr::summarise(min = min(trait_value), 
+                   max = max(trait_value)) #logits contain -Inf
+
+#will replace -Inf with closes negative value
+
+minus_inf_replacement <- logit_table %>% 
+  dplyr::filter(stringi::stri_detect_fixed(trait, 'logit')) %>% 
+  dplyr::filter(trait_value > -Inf) %>% 
+  dplyr::summarise(min = min(trait_value)) %>% 
+  pull %>% 
+  floor
+
+logit_table <- logit_table %>%
+  dplyr::mutate(trait_value = ifelse(trait_value == -Inf,
+                              minus_inf_replacement,
+                              trait_value))
+
+logit_numeric_colnames <- logit_table %>% 
+  dplyr::select(trait) %>% distinct %>% pull
+
+saveRDS(logit_table, file = ".cache/selected_table.rds")
+saveRDS(logit_numeric_colnames, file = ".cache/columns.rds")
+
+{
+  file.copy(from = "templates/report_timeseries.qmd",
+            to = "report_timeseries.qmd",
+            overwrite = TRUE)
+  quarto::quarto_render("report_timeseries.qmd" ,
+                        output_file = "report_timerseries_logit.html",
+                        execute_params = list('report_title' = 'after logit'))
+  file.remove("report_timeseries.qmd")
+}
