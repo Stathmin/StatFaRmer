@@ -54,8 +54,8 @@ summarize_table_local <- function(input_table,
       min = min(trait_value, na.rm = TRUE),
       max = max(trait_value, na.rm = TRUE),
       sd = sd(trait_value, na.rm = TRUE),
-      cv_percent = 100 * mean(trait_value, na.rm = TRUE) /
-        sd(trait_value, na.rm = TRUE),
+      cv_percent = 100 * sd(trait_value, na.rm = TRUE) /
+        mean(trait_value, na.rm = TRUE),
     )
 
   models_table <- input_table %>% # first linear models
