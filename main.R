@@ -1,42 +1,10 @@
-# install libraries -------------------------------------------------------
-
-# install.packages('tidyverse')
-# install.packages('janitor')
-# install.packages('readxl')
-# install.packages('stringi')
-# install.packages('emmeans')
-# install.packages('lme4')
-# install.packages('scales')
-# install.packages("rmarkdown")
-# install.packages("quarto")
-# install.packages("here")
-# install.packages('patchwork')
-# install.packages("openxlsx")
-# install.packages("LambertW")
-
-# load libraries ----------------------------------------------------------
-
-# library('tidyverse')
-# library('janitor')
-# library('readxl')
-# library('stringi')
-# library('emmeans')
-# library('lme4')
-# library('magrittr')
-# library('scales')
-# library("rmarkdown")
-# library("quarto")
-# library("here")
-# library("patchwork")
-# library("openxlsx")
-# library("LambertW")
-
-
+# init --------------------------------------------------------------------
 renv::activate()
 renv::hydrate(prompt = FALSE)
 here::i_am("README.md")
 `%>%` <- magrittr::`%>%`
 
+IGNORE_REPORTS = FALSE
 
 # functions ---------------------------------------------------------------
 summarize_table_local <- function(input_table,
@@ -45,87 +13,88 @@ summarize_table_local <- function(input_table,
                                       group_number +
                                       treatment
                                   },
-                                  out.path = "reports/test.xlsx") {
-  simple_summarize <- input_table %>%
-    dplyr::group_by(trait, grouping_gene, group_number, treatment) %>%
-    dplyr::summarise(
-      n_obs = dplyr::n_distinct(v_t_r),
-      mean = mean(trait_value, na.rm = TRUE),
-      min = min(trait_value, na.rm = TRUE),
-      max = max(trait_value, na.rm = TRUE),
-      sd = sd(trait_value, na.rm = TRUE),
-      cv_percent = 100 * sd(trait_value, na.rm = TRUE) /
-        mean(trait_value, na.rm = TRUE),
-    )
-
-  models_table <- input_table %>% # first linear models
-    dplyr::group_by(trait, grouping_gene) %>%
-    dplyr::do(model = lm(lm.model, data = .))
-
-
-  lsmeans_table <- models_table %>%
-    dplyr::mutate(lsm_each = list(broom::tidy(emmeans::lsmeans(
-      model, c("group_number", "treatment")
-    ))))
-
-  hard_summarize <- lsmeans_table %>% tidyr::unnest(lsm_each)
-
-  signif_table <- input_table %>% # first linear models
-    dplyr::group_by(trait, grouping_gene) %>%
-    dplyr::do(aov = broom::tidy(aov(lm.model, data = .))) %>%
-    tidyr::unnest(aov) %>%
-    dplyr::filter(term != "Residuals") %>%
-    dplyr::mutate(
-      p.value = dplyr::case_when(
-        p.value < 0.001 ~ "***",
-        p.value < 0.01 ~ "**",
-        p.value < 0.05 ~ "*",
-        p.value < 0.1 ~ ".",
-        .default = " "
+                                  out.path = "reports/test.xlsx",
+                                  debug = IGNORE_REPORTS) {
+  if (!debug) {
+    simple_summarize <- input_table %>%
+      dplyr::group_by(trait, grouping_gene, group_number, treatment) %>%
+      dplyr::summarise(
+        n_obs = dplyr::n_distinct(v_t_r),
+        mean = mean(trait_value, na.rm = TRUE),
+        min = min(trait_value, na.rm = TRUE),
+        max = max(trait_value, na.rm = TRUE),
+        sd = sd(trait_value, na.rm = TRUE),
+        cv_percent = 100 * sd(trait_value, na.rm = TRUE) /
+          mean(trait_value, na.rm = TRUE),
       )
-    ) %>%
-    tidyr::pivot_wider(
-      names_from = term,
-      values_from = p.value,
-      names_prefix = "p_",
-      id_cols = c(trait, grouping_gene)
-    )
-
-  hard_summarize %>%
-    dplyr::left_join(simple_summarize,
-      by = c(
-        "trait", "grouping_gene",
-        "group_number", "treatment"
+    
+    models_table <- input_table %>% # first linear models
+      dplyr::group_by(trait, grouping_gene) %>%
+      dplyr::do(model = lm(lm.model, data = .))
+    
+    
+    lsmeans_table <- models_table %>%
+      dplyr::mutate(lsm_each = list(broom::tidy(emmeans::lsmeans(
+        model, c("group_number", "treatment")
+      ))))
+    
+    hard_summarize <- lsmeans_table %>% tidyr::unnest(lsm_each)
+    
+    signif_table <- input_table %>% # first linear models
+      dplyr::group_by(trait, grouping_gene) %>%
+      dplyr::do(aov = broom::tidy(aov(lm.model, data = .))) %>%
+      tidyr::unnest(aov) %>%
+      dplyr::filter(term != "Residuals") %>%
+      dplyr::mutate(
+        p.value = dplyr::case_when(
+          p.value < 0.001 ~ "***",
+          p.value < 0.01 ~ "**",
+          p.value < 0.05 ~ "*",
+          p.value < 0.1 ~ ".",
+          .default = " "
+        )
+      ) %>%
+      tidyr::pivot_wider(
+        names_from = term,
+        values_from = p.value,
+        names_prefix = "p_",
+        id_cols = c(trait, grouping_gene)
       )
-    ) %>%
-    dplyr::left_join(signif_table, by = c("trait", "grouping_gene")) %>%
-    dplyr::select(!model) -> final_table
-
-  final_table %>%
-    openxlsx::write.xlsx(out.path)
-
-  return(final_table)
+    
+    hard_summarize %>%
+      dplyr::left_join(simple_summarize,
+                       by = c("trait", "grouping_gene",
+                              "group_number", "treatment")) %>%
+      dplyr::left_join(signif_table, by = c("trait", "grouping_gene")) %>%
+      dplyr::select(!model) -> final_table
+    
+    final_table %>%
+      openxlsx::write.xlsx(out.path)
+    
+    return(final_table)
+  }
 }
 
 make_report <- function(table,
                         colnames,
                         title = "defailt",
-                        filename = "default.html") {
-  saveRDS(table, file = ".cache/selected_table.rds")
-  saveRDS(colnames, file = ".cache/columns.rds")
-
-
-  file.copy(
-    from = "templates/report_timeseries.qmd",
-    to = "report_timeseries.qmd",
-    overwrite = TRUE
-  )
-  quarto::quarto_render(
-    "report_timeseries.qmd",
-    output_file = filename,
-    execute_params = list("report_title" = title)
-  )
-  file.remove("report_timeseries.qmd")
+                        filename = "default.html",
+                        debug = IGNORE_REPORTS) {
+  if (!debug) {
+    saveRDS(table, file = ".cache/selected_table.rds")
+    saveRDS(colnames, file = ".cache/columns.rds")
+    
+    
+    file.copy(from = "templates/report_timeseries.qmd",
+              to = "report_timeseries.qmd",
+              overwrite = TRUE)
+    quarto::quarto_render(
+      "report_timeseries.qmd",
+      output_file = filename,
+      execute_params = list("report_title" = title)
+    )
+    file.remove("report_timeseries.qmd")
+  }
 }
 
 # import planteye table -------------------------------------------------------
@@ -387,3 +356,37 @@ make_report(logit_gaus_table,
 summarize_table_local(logit_gaus_table,
   out.path = "reports/after_normalization.xlsx"
 )
+
+
+# violins -----------------------------------------------------------------
+named_plots <- logit_gaus_table %>% 
+  dplyr::group_by(trait, grouping_gene) %>% 
+  dplyr::arrange(group_number, treatment) %>% 
+  dplyr::mutate(gr_tr = paste(group_number, treatment, sep = '_')) %>% 
+  dplyr::group_map(
+    ~ list(paste(.y[[1,'trait']],
+                 .y[[1,'grouping_gene']],
+                 sep = ', '),
+      ggplot2::ggplot(., ggplot2::aes(y = trait_value, 
+                                 x = gr_tr, 
+                                 color = group_number)) + 
+      ggplot2::geom_violin() +
+      ggplot2::geom_boxplot(width = 0.1) +
+      ggplot2::ggtitle(paste(.y[[1,'trait']],
+                             .y[[1,'grouping_gene']],
+                             sep = ', ')) +
+      ggplot2::theme_minimal())
+  )
+  
+saveRDS(named_plots, file = ".cache/named_plots.rds")
+
+
+file.copy(from = "templates/report_violins.qmd",
+          to = "report_violins.qmd",
+          overwrite = TRUE)
+quarto::quarto_render(
+  "report_violins.qmd",
+  output_file = 'violins_gaus.html',
+  execute_params = list("report_title" = 'Violins')
+)
+file.remove("report_violins.qmd")
