@@ -2,10 +2,11 @@
 renv::activate()
 renv::hydrate(prompt = FALSE)
 here::i_am("README.md")
+
 set.seed(42)
 `%>%` <- magrittr::`%>%`
 
-IGNORE_REPORTS = TRUE
+IGNORE_REPORTS = FALSE
 
 # functions ---------------------------------------------------------------
 
@@ -57,8 +58,7 @@ summarize_table_local <- function(input_table,
     
     models_table <- input_table %>% # first linear models
       dplyr::group_by(trait, grouping_gene) %>%
-      dplyr::do(model = lm(lm.model, data = .)) %>%
-      dplyr::ungroup()
+      dplyr::do(model = lm(lm.model, data = .))
     
     
     lsmeans_table <- models_table %>%
@@ -224,7 +224,97 @@ merged_table <- merged_table %>%
 dim(merged_table) # 58380    57
 
 
+# aggregation -------------------------------------------------------------
+merged_table <- merged_table %>% 
+  dplyr::mutate(hours_from_start = as.numeric(difftime(timestamp, min(timestamp), 
+                                           units = 'hours'))
+                )
 
+dbscan_cluster <- merged_table %>% 
+  dplyr::select(hours_from_start) %>% 
+  dplyr::pull() %>% 
+  matrix(ncol = 1) %>% 
+  dbscan::dbscan(., eps = 1) %>% 
+  .$cluster %>% 
+  as.character(.) %>% 
+  tibble::as_tibble_col(column_name = 'dbscan_cluster')
+
+merged_table <- merged_table %>% 
+  dplyr::bind_cols(dbscan_cluster) %>% 
+  dplyr::select(-hours_from_start)
+
+remove(dbscan_cluster)
+
+# merged_table %>% 
+#   ggplot2::ggplot(.,
+#   ggplot2::aes(x = timestamp, 
+#                y = digital_biomass_mm3, 
+#                colour = dbscan_cluster)
+#   ) +
+#   ggplot2::geom_point() + 
+#   ggplot2::scale_x_datetime()
+
+
+# reshape table -----------------------------------------------------------
+
+string_colnames <- merged_table %>%
+  dplyr::select(where(\(x) !is.numeric(x) &
+                        !lubridate::is.timepoint(x))) %>%
+  colnames()
+
+numeric_colnames <- merged_table %>%
+  dplyr::select(where(\(x) is.numeric(x))) %>%
+  drop() %>%
+  colnames()
+
+merged_table <- merged_table %>%
+  dplyr::relocate(all_of(string_colnames), .before = timestamp) %>%
+  dplyr::mutate(total_numeric = rowSums(pick(where(is.numeric)),
+                                        na.rm = TRUE)) %>%
+  dplyr::filter(total_numeric != 0) %>%
+  dplyr::select(-total_numeric) # remove rows full of zeroes
+
+merged_table <- merged_table %>%
+  tidyr::drop_na(p_ngr5, ppd, rht_b1)
+
+merged_table <- merged_table %>%
+  tidyr::pivot_longer(all_of(numeric_colnames),
+                      names_to = "trait",
+                      values_to = "trait_value")
+
+merged_table <- merged_table %>%
+  tidyr::pivot_longer(all_of(c("p_ngr5", "ppd", "rht_b1")),
+                      names_to = "grouping_gene",
+                      values_to = "group_number")
+
+# remove outlier groups ---------------------------------------------------
+
+outliers_timepoints <- merged_table %>% 
+  tidyr::pivot_wider(names_from = "trait",
+                     values_from = "trait_value") %>% 
+  dplyr::select(-c(grouping_gene, group_number)) %>% 
+  dplyr::distinct() %>% 
+  dplyr::group_by(dbscan_cluster) %>% 
+  dplyr::summarise(
+    dplyr::across(
+      dplyr::where(is.numeric), \(x) mean(x, rm.na = TRUE)
+    )
+  ) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::mutate(
+    dplyr::across(-1, \(x) {abs(x - mean(x, na.rm = TRUE)) / 
+        sd(x, na.rm = TRUE) > 3}
+    )
+  ) %>% 
+  tidyr::pivot_longer(-1, names_to = 'trait', 
+                      values_to = 'over_3_sigm_or_degraded') %>% 
+  tidyr::replace_na(list(over_3_sigm_or_degraded = TRUE)) %>% 
+  dplyr::filter(over_3_sigm_or_degraded)
+
+merged_table <- merged_table %>% 
+  dplyr::anti_join(outliers_timepoints, by = c('dbscan_cluster', 'trait'))
+
+remove(outliers_timepoints)
 # remove old variables -------------------------------------------------------
 
 remove(
@@ -259,39 +349,6 @@ selected_table <- merged_table %>%
     timestamp >= as.POSIXct("2022-04-01 00:00:00", tz = "UTC"),
     timestamp <= as.POSIXct("2022-04-01 15:00:00", tz = "UTC")
   )
-
-string_colnames <- selected_table %>%
-  dplyr::select(where(\(x) ! is.numeric(x) &
-                        !lubridate::is.timepoint(x))) %>%
-  colnames()
-
-numeric_colnames <- selected_table %>%
-  dplyr::select(where(\(x) is.numeric(x))) %>%
-  drop() %>%
-  colnames()
-
-selected_table <- selected_table %>%
-  dplyr::relocate(all_of(string_colnames), .before = timestamp) %>%
-  dplyr::mutate(total_numeric = rowSums(pick(where(is.numeric)),
-                                        na.rm = TRUE)) %>%
-  dplyr::filter(total_numeric != 0) %>%
-  dplyr::select(-total_numeric) # remove rows full of zeroes
-
-selected_table <- selected_table %>%
-  tidyr::drop_na(p_ngr5, ppd, rht_b1) # KEEP ONLY PLANTS WITH KNOWN GT, 456  57
-
-
-# pivot selected table ---------------------------------------------------------
-
-selected_table <- selected_table %>%
-  tidyr::pivot_longer(all_of(numeric_colnames),
-                      names_to = "trait",
-                      values_to = "trait_value")
-
-selected_table <- selected_table %>%
-  tidyr::pivot_longer(all_of(c("p_ngr5", "ppd", "rht_b1")),
-                      names_to = "grouping_gene",
-                      values_to = "group_number")
 
 # report data from the time interval, raw ---------------------------------
 
@@ -496,3 +553,5 @@ if (!IGNORE_REPORTS) {
   )
   file.remove("report_violins.qmd")
 }
+
+# DEBUG -------------------------------------------------------------------

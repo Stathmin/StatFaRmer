@@ -282,6 +282,18 @@
       ],
       "Hash": "e4f97056611e8e6b8b852d13b7400cf1"
     },
+    "dbscan": {
+      "Package": "dbscan",
+      "Version": "1.1-11",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "Rcpp",
+        "graphics",
+        "stats"
+      ],
+      "Hash": "1363f02b54d086ace5af19f590697f90"
+    },
     "digest": {
       "Package": "digest",
       "Version": "0.6.31",
