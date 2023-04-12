@@ -238,7 +238,7 @@ dbscan_cluster <- merged_table %>%
   matrix(ncol = 1) %>%
   dbscan::dbscan(., eps = hours_eps) %>%
   .$cluster %>%
-  as.character(.) %>%
+  forcats::as_factor(.) %>%
   tibble::as_tibble_col(column_name = 'dbscan_cluster')
 
 merged_table <- merged_table %>%
@@ -247,14 +247,16 @@ merged_table <- merged_table %>%
 
 remove(dbscan_cluster)
 
-# merged_table %>%
-#   ggplot2::ggplot(.,
-#   ggplot2::aes(x = timestamp,
-#                y = digital_biomass_mm3,
-#                colour = dbscan_cluster)
-#   ) +
-#   ggplot2::geom_point() +
-#   ggplot2::scale_x_datetime()
+(merged_table %>%
+  dplyr::mutate(even = as.character(as.integer(dbscan_cluster) %% 2)) %>%
+  ggplot2::ggplot(.,
+  ggplot2::aes(x = timestamp,
+               y = digital_biomass_mm3,
+               colour = even)
+  ) +
+  ggplot2::geom_point() +
+  ggplot2::scale_x_datetime()) %>%
+  ggplot2::ggsave('reports/clusters_before_cluster_filtering.png', .)
 
 # reshape table -----------------------------------------------------------
 
@@ -290,32 +292,48 @@ merged_table <- merged_table %>%
 
 # remove outlier groups ---------------------------------------------------
 
-outliers_timepoints <- merged_table %>%
-  tidyr::pivot_wider(names_from = 'trait',
-                     values_from = 'trait_value') %>%
+outliers_timepoints <- merged_table %>% #delete over-3-sigmas
   dplyr::select(-c(grouping_gene, group_number)) %>%
   dplyr::distinct() %>%
-  dplyr::group_by(dbscan_cluster) %>%
-  dplyr::summarise(
-    dplyr::across(
-      dplyr::where(is.numeric), \(x) mean(x, rm.na = TRUE)
-    )
-  ) %>%
+  dplyr::group_by(dbscan_cluster, trait) %>%
+  dplyr::summarise(trait_value = (mean(trait_value) - min(trait_value)) /
+                                      (max(trait_value) - min(trait_value))) %>%
   dplyr::ungroup() %>%
-  dplyr::mutate(
-    dplyr::across(-1, \(x) {abs(x - mean(x, na.rm = TRUE)) /
-        sd(x, na.rm = TRUE) > 3}
-    )
-  ) %>%
-  tidyr::pivot_longer(-1, names_to = 'trait',
-                      values_to = 'over_3_sigm_or_degraded') %>%
-  tidyr::replace_na(list(over_3_sigm_or_degraded = TRUE)) %>%
-  dplyr::filter(over_3_sigm_or_degraded)
+  dplyr::group_by(trait) %>%
+  dplyr::mutate(trait_value = {abs(trait_value - mean(trait_value)) /
+        sd(trait_value) > 3}) %>%
+  tidyr::replace_na(list(trait_value = TRUE)) %>%
+  dplyr::filter(trait_value)
 
 merged_table <- merged_table %>%
   dplyr::anti_join(outliers_timepoints, by = c('dbscan_cluster', 'trait'))
 
 remove(outliers_timepoints)
+
+merged_table <- merged_table %>%  #delete too high stds
+  dplyr::group_by(dbscan_cluster, trait) %>%
+  dplyr::mutate(std = sd(trait_value)) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(trait) %>%
+  dplyr::filter((std - mean(std)) / mean(std) <= 3) %>%
+  dplyr::select(-std)
+
+
+(merged_table %>%
+    tidyr::pivot_wider(names_from = 'trait',
+                       values_from = 'trait_value') %>%
+    dplyr::select(-c(grouping_gene, group_number)) %>%
+    dplyr::distinct() %>%
+    dplyr::mutate(even = as.character(as.integer(dbscan_cluster) %% 2)) %>%
+    ggplot2::ggplot(.,
+                    ggplot2::aes(x = timestamp,
+                                 y = digital_biomass_mm3,
+                                 colour = even)
+    ) +
+    ggplot2::geom_point() +
+    ggplot2::scale_x_datetime()) %>%
+  ggplot2::ggsave('reports/clusters_after_cluster_filtering.png', .)
+
 # remove old variables -------------------------------------------------------
 
 remove(
