@@ -1,0 +1,33 @@
+---
+title: "Report `r params$report_title`"
+format:
+  html:
+    theme: journal
+    output-dir: reports
+    embed-resources: true
+editor: visual
+params:
+  report_title: 'default'
+---
+
+```{r}
+#| label: plot-series
+#| warning: false
+#| echo: false
+#| fig.keep: 'all'
+#| results: 'asis'
+
+library("ggplot2")
+library("patchwork")
+
+`%>%` <- magrittr::`%>%`
+
+named_plots <- readRDS(paste0(here::here(),"/.cache/named_plots.rds"))
+
+for (named_plot in named_plots) {
+  cat("## Trait:",named_plot[[1]],"\n\n")
+  plot(named_plot[[2]])
+}
+
+
+```

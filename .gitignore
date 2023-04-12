@@ -2,8 +2,6 @@
 .Rhistory
 .RData
 .Ruserdata
-*.qmd
 *.rmarkdown
-report_*
 *.html
 /.quarto/
