@@ -10,9 +10,13 @@ set.seed(42)
 hours_eps <- 0.5
 `%>%` <- magrittr::`%>%`
 
-IGNORE_REPORTS <- FALSE
+IGNORE_REPORTS <- TRUE
 
 # functions ---------------------------------------------------------------
+
+sym_diff <- function(a, b) {
+  sort(setdiff(union(a, b), intersect(a, b)))
+}
 
 tidy_CL_cell <- function(CL_column) {
   CL_column %>%
@@ -173,10 +177,6 @@ groups_table <- groups_table %>%
   janitor::clean_names(.)
 
 # table merge -------------------------------------------------------------
-
-sym_diff <- function(a, b) {
-  sort(setdiff(union(a, b), intersect(a, b)))
-}
 
 dim(planteye_table) # 58380    49
 
@@ -574,3 +574,10 @@ if (!IGNORE_REPORTS) {
   )
   file.remove('report_violins.qmd')
 }
+
+saveRDS(printable_table, file = '.cache/printable_table.rds')
+
+
+# SHINY APPS --------------------------------------------------------------
+
+shiny::runApp('shiny_violins', launch.browser = TRUE)
