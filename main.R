@@ -1,24 +1,66 @@
-# init --------------------------------------------------------------------
+
+
+# cleaning -----
 rm(list = ls())
 gc()
 
+# renv -----
 renv::activate()
 renv::hydrate(prompt = FALSE)
 here::i_am('README.md')
-
 set.seed(42)
-hours_eps <- 0.5
+
+IGNORE_REPORTS <- FALSE
+
+
+# project selection -------------------------------------------------------
+
+project <- "project_NO3"
+
+phenospex_file <- Sys.glob(paste0("data/",project, '/*_data.zip'))
+unit_file_1 <- Sys.glob(paste0("data/",project, '/*_handmade.csv'))
+unit_file_2 <- Sys.glob(paste0("data/",project, '/*_translation.csv'))
+group_file <- Sys.glob(paste0("data/",project, '/groups.xlsx'))
+times = read.csv(paste0("data/",project, '/time.csv'), header = FALSE)
+
+#slice_time
+time_before = as.POSIXct(times[1,1], tz = 'UTC')
+time_after = as.POSIXct(times[2,1], tz = 'UTC')
+
+# MODELS ------------------------------------------------------------------
+best_aoc <- function(data) {
+  simplest <-
+    aov(formula(trait_value ~ group_number + treatment), data = data)
+  interacting <-
+    aov(formula(trait_value ~ 1 + group_number * treatment), data = data)
+  repeated_by_var <-
+    aov(formula(trait_value ~ group_number * treatment  + var / treatment),
+        data = data)
+
+  model.set <- list(simplest, interacting, repeated_by_var)
+  model.names <- c("simplest", "interacting", "repeated_by_var")
+
+  model_name <- AICcmodavg::aictab(model.set,
+                                   modnames = model.names) %>%
+    tibble::as_tibble() %>%
+    dplyr::arrange(AICc, K) %>%
+    head(1) %>%
+    .[[1, 'Modnames']]
+
+  model.set[which(model.names == model_name)] %>%
+    return()
+}
+
+# functions -----
 `%>%` <- magrittr::`%>%`
-
-IGNORE_REPORTS <- TRUE
-
-# functions ---------------------------------------------------------------
 
 sym_diff <- function(a, b) {
   sort(setdiff(union(a, b), intersect(a, b)))
 }
 
 tidy_CL_cell <- function(CL_column) {
+  #transforms column with objects from multcompView::multcompLetters4(...)
+  #into column with tibbles
   CL_column %>%
     purrr::map2(., names(.), ~ {
       tibble::as_tibble(.x$Letters,
@@ -36,6 +78,7 @@ tidy_CL_cell <- function(CL_column) {
 }
 
 p_stars <- function(x) {
+  #formating of p-values
   dplyr::case_when(x < 0.001 ~ '***',
                    x < 0.01 ~ '**',
                    x < 0.05 ~ '*',
@@ -51,6 +94,8 @@ summarize_table_local <- function(input_table,
                                   },
                                   out.path = 'reports/test.xlsx',
                                   debug = IGNORE_REPORTS) {
+  #implies model trait_value ~ 1 + group_number + treatment,
+  #creates .xlsx table with descriptive statistics and cross-factor diffs
   if (!debug) {
     simple_summarize <- input_table %>%
       dplyr::group_by(trait, grouping_gene, group_number, treatment) %>%
@@ -65,10 +110,9 @@ summarize_table_local <- function(input_table,
       ) %>%
       dplyr::ungroup()
 
-    models_table <- input_table %>% # first linear models
+    models_table <- input_table %>%
       dplyr::group_by(trait, grouping_gene) %>%
       dplyr::do(model = lm(lm.model, data = .))
-
 
     lsmeans_table <- models_table %>%
       dplyr::mutate(lsm_each = list(broom::tidy(emmeans::lsmeans(
@@ -77,7 +121,7 @@ summarize_table_local <- function(input_table,
 
     hard_summarize <- lsmeans_table %>% tidyr::unnest(lsm_each)
 
-    signif_table <- input_table %>% # first linear models
+    signif_table <- input_table %>%
       dplyr::group_by(trait, grouping_gene) %>%
       dplyr::do(aov = broom::tidy(aov(lm.model, data = .))) %>%
       tidyr::unnest(aov) %>%
@@ -110,10 +154,10 @@ make_report <- function(table,
                         title = 'defailt',
                         filename = 'default.html',
                         debug = IGNORE_REPORTS) {
+  #renders quadro template "templates/report_timeseries.qmd"
   if (!debug) {
     saveRDS(table, file = '.cache/selected_table.rds')
     saveRDS(colnames, file = '.cache/columns.rds')
-
 
     file.copy(from = 'templates/report_timeseries.qmd',
               to = 'report_timeseries.qmd',
@@ -127,18 +171,11 @@ make_report <- function(table,
   }
 }
 
-# import planteye table -------------------------------------------------------
-phenospex_file <-
-  './data/2022-03-24-Wheat_NO3_#1(b3-6)_20220426_data.zip'
-
+# import planteye table -----
 planteye_table <- readr::read_csv(phenospex_file) %>%
   janitor::clean_names(.)
 
-# import unit data --------------------------------------------------------
-
-unit_file_1 <- './data/wheat_NO3_new_handmade.csv'
-unit_file_2 <- './data/wheat_NO3_new_translation.csv'
-
+# import unit data -----
 unit_table_1 <- readr::read_csv(unit_file_1)
 unit_table_2 <- readr::read_csv(unit_file_2)
 
@@ -147,9 +184,7 @@ unit_table <- unit_table_1 %>%
   janitor::clean_names() %>%
   dplyr::rename(repetition = `repeat`)
 
-# import groups table -----------------------------------------------------
-group_file <- './data/groups.xlsx'
-
+# import groups table -----
 excel <- readxl::read_xlsx(group_file)
 
 sheetname_vector <- readxl::excel_sheets(group_file) %>%
@@ -176,8 +211,8 @@ groups_table <- groups_table %>%
                      values_from = group_number) %>%
   janitor::clean_names(.)
 
-# table merge -------------------------------------------------------------
-
+# table merge -----
+## TASK: add checkmates
 dim(planteye_table) # 58380    49
 
 planteye_keys <- planteye_table %>%
@@ -226,11 +261,13 @@ merged_table <- merged_table %>%
 
 dim(merged_table) # 58380    57
 
-# aggregation -------------------------------------------------------------
+# aggregation with dbscan -----
+hours_eps <- 0.5
+
 merged_table <- merged_table %>%
-  dplyr::mutate(hours_from_start = as.numeric(difftime(timestamp, min(timestamp),
-                                           units = 'hours'))
-                )
+  dplyr::mutate(hours_from_start =
+                  as.numeric(difftime(timestamp, min(timestamp),
+                                                       units = 'hours')))
 
 dbscan_cluster <- merged_table %>%
   dplyr::select(hours_from_start) %>%
@@ -245,23 +282,25 @@ merged_table <- merged_table %>%
   dplyr::bind_cols(dbscan_cluster) %>%
   dplyr::select(-hours_from_start)
 
-remove(dbscan_cluster)
+remove(list=c('dbscan_cluster', 'hours_eps'))
 
-(merged_table %>%
-  dplyr::mutate(even = as.character(as.integer(dbscan_cluster) %% 2)) %>%
-  ggplot2::ggplot(.,
-  ggplot2::aes(x = timestamp,
-               y = digital_biomass_mm3,
-               colour = even)
-  ) +
-  ggplot2::geom_point() +
-  ggplot2::scale_x_datetime()) %>%
+(
+  merged_table %>%
+    dplyr::mutate(even = as.character(as.integer(dbscan_cluster) %% 2)) %>%
+    ggplot2::ggplot(
+      .,
+      ggplot2::aes(x = timestamp,
+                   y = digital_biomass_mm3,
+                   colour = even)
+    ) +
+    ggplot2::geom_point() +
+    ggplot2::scale_x_datetime()
+) %>%
   ggplot2::ggsave('reports/clusters_before_cluster_filtering.png', .)
 
-# reshape table -----------------------------------------------------------
-
+# reshape table -----
 string_colnames <- merged_table %>%
-  dplyr::select(where(\(x) !is.numeric(x) &
+  dplyr::select(where(\(x) ! is.numeric(x) &
                         !lubridate::is.timepoint(x))) %>%
   colnames()
 
@@ -290,18 +329,19 @@ merged_table <- merged_table %>%
                       names_to = 'grouping_gene',
                       values_to = 'group_number')
 
-# remove outlier groups ---------------------------------------------------
-
+# remove outlier groups -----
 outliers_timepoints <- merged_table %>% #delete over-3-sigmas
   dplyr::select(-c(grouping_gene, group_number)) %>%
   dplyr::distinct() %>%
   dplyr::group_by(dbscan_cluster, trait) %>%
   dplyr::summarise(trait_value = (mean(trait_value) - min(trait_value)) /
-                                      (max(trait_value) - min(trait_value))) %>%
+                     (max(trait_value) - min(trait_value))) %>%
   dplyr::ungroup() %>%
   dplyr::group_by(trait) %>%
-  dplyr::mutate(trait_value = {abs(trait_value - mean(trait_value)) /
-        sd(trait_value) > 3}) %>%
+  dplyr::mutate(trait_value = {
+    abs(trait_value - mean(trait_value)) /
+      sd(trait_value) > 3
+  }) %>%
   tidyr::replace_na(list(trait_value = TRUE)) %>%
   dplyr::filter(trait_value)
 
@@ -318,24 +358,25 @@ merged_table <- merged_table %>%  #delete too high stds
   dplyr::filter((std - mean(std)) / mean(std) <= 3) %>%
   dplyr::select(-std)
 
-
-(merged_table %>%
+(
+  merged_table %>%
     tidyr::pivot_wider(names_from = 'trait',
                        values_from = 'trait_value') %>%
     dplyr::select(-c(grouping_gene, group_number)) %>%
     dplyr::distinct() %>%
     dplyr::mutate(even = as.character(as.integer(dbscan_cluster) %% 2)) %>%
-    ggplot2::ggplot(.,
-                    ggplot2::aes(x = timestamp,
-                                 y = digital_biomass_mm3,
-                                 colour = even)
+    ggplot2::ggplot(
+      .,
+      ggplot2::aes(x = timestamp,
+                   y = digital_biomass_mm3,
+                   colour = even)
     ) +
     ggplot2::geom_point() +
-    ggplot2::scale_x_datetime()) %>%
+    ggplot2::scale_x_datetime()
+) %>%
   ggplot2::ggsave('reports/clusters_after_cluster_filtering.png', .)
 
-# remove old variables -------------------------------------------------------
-
+# clean old variables -----
 remove(
   list = c(
     'excel',
@@ -361,28 +402,24 @@ remove(
   )
 )
 
-# in each cluster replace tech repeats by mean ----------------------------
+# in each cluster replace tech repeats by median -----
 merged_table <- merged_table %>%
-  dplyr::group_by(dbscan_cluster) %>%
-  dplyr::mutate(timestamp = median(timestamp)) %>%
-  dplyr::ungroup() %>%
+  # dplyr::group_by(dbscan_cluster) %>%
+  # dplyr::mutate(timestamp = median(timestamp)) %>%
+  # dplyr::ungroup() %>%
   dplyr::group_by(v_t_r, trait, dbscan_cluster) %>%
   dplyr::mutate(trait_value = median(trait_value)) %>%
   dplyr::ungroup() %>%
   dplyr::distinct()
-# selected time interval, filtration --------------------------------------
 
+# selected time interval, filtration -----
 selected_table <- merged_table %>%
-  dplyr::filter(
-    timestamp >= as.POSIXct('2022-04-01 00:00:00', tz = 'UTC')
-  ) %>%
-  dplyr::filter(
-    timestamp <= as.POSIXct('2022-04-01 15:00:00', tz = 'UTC')
-  )
+  dplyr::filter(timestamp >= time_before) %>%
+  dplyr::filter(timestamp <= time_after)
 
 remove(merged_table)
-# report data from the time interval, raw ---------------------------------
 
+# report data from the time interval, raw -----
 make_report(selected_table,
             numeric_colnames,
             title = 'before normalization',
@@ -391,8 +428,7 @@ make_report(selected_table,
 summarize_table_local(selected_table,
                       out.path = 'reports/before_normalization.xlsx')
 
-# percentage to logit -----------------------------------------------------
-
+# percentage to logit -----
 fix_perc_imprecision <- \(x) dplyr::case_when((x >= 0) &
                                                 (x <= 1.00) ~ x,
                                               (x < 0) &
@@ -410,15 +446,15 @@ logit_table <- selected_table %>%
   )) %>%
   dplyr::mutate(trait = stringi::stri_replace_all_fixed(trait,
                                                         pattern = 'percent',
-                                                        replacement = 'logit')) # logit transform for all percent data, fixing percents from range -0.01 to 1.01
+                                                        replacement = 'logit'))
 
+# logit transform for all percent data, fixing percents from range -0.01 to 1.01
 logit_table %>%
   dplyr::filter(stringi::stri_detect_fixed(trait, 'logit')) %>%
   dplyr::summarise(min = min(trait_value),
                    max = max(trait_value)) # logits contain -Inf
 
 # will replace -Inf with closes negative value
-
 minus_inf_replacement <- logit_table %>%
   dplyr::filter(stringi::stri_detect_fixed(trait, 'logit')) %>%
   dplyr::filter(trait_value > -Inf) %>%
@@ -444,8 +480,7 @@ make_report(logit_table,
 summarize_table_local(logit_table,
                       out.path = 'reports/logit.xlsx')
 
-# distribution in each subgroup -------------------------------------------
-
+# normalize distribution in each subgroup -----
 logit_gaus_table <-
   logit_table %>% # normalize for each trait
   dplyr::group_by(trait) %>%
@@ -454,10 +489,9 @@ logit_gaus_table <-
                                                     method = 'MLE')) %>%
   dplyr::ungroup()
 
-# MODELS -----------------------------------------------------------------------
-
+# remove degenerate groups -----
 logit_gaus_table <- logit_gaus_table %>%
-  dplyr::group_by(trait, grouping_gene) %>%
+  dplyr::group_by(trait) %>%
   dplyr::mutate(degenerate = (dplyr::n_distinct(group_number) - 1) *
                   (dplyr::n_distinct(treatment) - 1) == 0) %>%
   dplyr::filter(degenerate == FALSE) %>%
@@ -472,16 +506,19 @@ make_report(logit_gaus_table,
 summarize_table_local(logit_gaus_table,
                       out.path = 'reports/after_normalization.xlsx')
 
-# remove redundant tables -------------------------------------------------
-remove(list = c(
-  'selected_table',
-  'logit_table'
-))
+# clean redundant tables -----
+remove(list = c('selected_table',
+                'logit_table'))
 remove(list = c('minus_inf_replacement', 'numeric_colnames'))
-# violins -----------------------------------------------------------------
 
+# prepare violins -----
 nested_table <- logit_gaus_table %>%
   dplyr::nest_by(trait, grouping_gene, .key = 'subdf')
+
+
+
+ANOVA_table <- nested_table %>%
+  dplyr::do(ANOVA = best_aoc(.$subdf))
 
 ANOVA_table <- nested_table %>%
   dplyr::do(ANOVA = aov(trait_value ~
@@ -536,48 +573,48 @@ printable_table <- logit_gaus_table %>%
   )
 
 gc()
-if (!IGNORE_REPORTS) {
-  named_plots <- printable_table %>%
-    dplyr::group_by(trait, grouping_gene, tukey_grouping) %>%
-    dplyr::arrange(tukey_group) %>%
-    dplyr::group_map(
-      ~ list(
-        paste(.y[[1, 'trait']],
-              .y[[1, 'grouping_gene']],
-              .y[[1, 'tukey_grouping']],
-              sep = ', '),
-        ggplot2::ggplot(
-          .,
-          ggplot2::aes(y = trait_value,
-                       x = tukey_group,
-                       color = tukey_letter)
-        ) +
-          ggplot2::geom_violin() +
-          ggplot2::geom_boxplot(width = 0.1) +
-          ggplot2::ggtitle(paste(.y[[1, 'trait']],
-                                 .y[[1, 'grouping_gene']],
-                                 .y[[1, 'tukey_grouping']],
-                                 sep = ', ')) +
-          ggplot2::theme_minimal()
-      )
-    )
 
-  saveRDS(named_plots, file = '.cache/named_plots.rds')
-
-  file.copy(from = 'templates/report_violins.qmd',
-            to = 'report_violins.qmd',
-            overwrite = TRUE)
-  quarto::quarto_render(
-    'report_violins.qmd',
-    output_file = 'violins_gaus.html',
-    execute_params = list('report_title' = 'Violins')
-  )
-  file.remove('report_violins.qmd')
-}
+# render violins -----
+# if (!IGNORE_REPORTS) {
+#   named_plots <- printable_table %>%
+#     dplyr::group_by(trait, grouping_gene, tukey_grouping) %>%
+#     dplyr::arrange(tukey_group) %>%
+#     dplyr::group_map(
+#       ~ list(
+#         paste(.y[[1, 'trait']],
+#               .y[[1, 'grouping_gene']],
+#               .y[[1, 'tukey_grouping']],
+#               sep = ', '),
+#         ggplot2::ggplot(
+#           .,
+#           ggplot2::aes(y = trait_value,
+#                        x = tukey_group,
+#                        color = tukey_letter)
+#         ) +
+#           ggplot2::geom_violin() +
+#           ggplot2::geom_boxplot(width = 0.1) +
+#           ggplot2::ggtitle(paste(.y[[1, 'trait']],
+#                                  .y[[1, 'grouping_gene']],
+#                                  .y[[1, 'tukey_grouping']],
+#                                  sep = ', ')) +
+#           ggplot2::theme_minimal()
+#       )
+#     )
+#
+#   saveRDS(named_plots, file = '.cache/named_plots.rds')
+#
+#   file.copy(from = 'templates/report_violins.qmd',
+#             to = 'report_violins.qmd',
+#             overwrite = TRUE)
+#   quarto::quarto_render(
+#     'report_violins.qmd',
+#     output_file = 'violins_gaus.html',
+#     execute_params = list('report_title' = 'Violins')
+#   )
+#   file.remove('report_violins.qmd')
+# }
 
 saveRDS(printable_table, file = '.cache/printable_table.rds')
 
-
-# SHINY APPS --------------------------------------------------------------
-
+# SHINY APPS -----
 shiny::runApp('shiny_violins', launch.browser = TRUE)
