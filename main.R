@@ -171,6 +171,22 @@ make_report <- function(table,
   }
 }
 
+try_gaussianize_or_break <- function(data){
+  tryCatch(
+    expr = {
+      new_val <- LambertW::Gaussianize(data = data,
+                                       type = 'hh',
+                                       method = 'MLE')
+      return(new_val)
+    },
+    error = function(e){
+      print(e)
+      message('LambertW::Gaussianize returned an error! Deleting the cell')
+      return(NA)
+    }
+  )
+}
+
 # import planteye table -----
 planteye_table <- readr::read_csv(phenospex_file) %>%
   janitor::clean_names(.)
@@ -317,7 +333,7 @@ merged_table <- merged_table %>%
   dplyr::select(-total_numeric) # remove rows full of zeroes
 
 merged_table <- merged_table %>%
-  tidyr::drop_na(p_ngr5, ppd, rht_b1)
+  tidyr::drop_na(janitor::make_clean_names(sheetname_vector))
 
 merged_table <- merged_table %>%
   tidyr::pivot_longer(all_of(numeric_colnames),
@@ -325,7 +341,7 @@ merged_table <- merged_table %>%
                       values_to = 'trait_value')
 
 merged_table <- merged_table %>%
-  tidyr::pivot_longer(all_of(c('p_ngr5', 'ppd', 'rht_b1')),
+  tidyr::pivot_longer(all_of(janitor::make_clean_names(sheetname_vector)),
                       names_to = 'grouping_gene',
                       values_to = 'group_number')
 
@@ -484,10 +500,9 @@ summarize_table_local(logit_table,
 logit_gaus_table <-
   logit_table %>% # normalize for each trait
   dplyr::group_by(trait) %>%
-  dplyr::mutate(trait_value = LambertW::Gaussianize(trait_value,
-                                                    type = 'hh',
-                                                    method = 'MLE')) %>%
-  dplyr::ungroup()
+  dplyr::mutate(trait_value = try_gaussianize_or_break(trait_value)) %>%
+  dplyr::ungroup() %>%
+  tidyr::drop_na(trait_value)
 
 # remove degenerate groups -----
 logit_gaus_table <- logit_gaus_table %>%
