@@ -11,6 +11,9 @@ set.seed(42)
 # Load dataset
 datatable <-
   readRDS(paste0(here::here(), '/.cache/printable_table.rds')) %>%
+  dplyr::group_by(v_t_r, trait) %>%
+  dplyr::mutate(trait_value = mean(trait_value)) %>%
+  dplyr::ungroup() %>%
   tidyr::pivot_wider(
     names_from = c(tukey_grouping, grouping_gene),
     values_from = c(tukey_group, tukey_letter),

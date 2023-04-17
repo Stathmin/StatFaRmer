@@ -10,7 +10,7 @@ renv::hydrate(prompt = FALSE)
 here::i_am('README.md')
 set.seed(42)
 
-IGNORE_REPORTS <- FALSE
+IGNORE_REPORTS <- TRUE
 
 
 # project selection -------------------------------------------------------
@@ -30,17 +30,22 @@ time_after = as.POSIXct(times[2,1], tz = 'UTC')
 remove('times')
 
 # MODELS ------------------------------------------------------------------
-best_aoc <- function(data) {
-  simplest <-
-    aov(formula(trait_value ~ group_number + treatment), data = data)
+best_aov <- function(data) {
+  simple <-
+    aov(formula(trait_value ~ 1 + group_number * treatment),
+        data = data)
   interacting <-
-    aov(formula(trait_value ~ 1 + group_number * treatment), data = data)
-  repeated_by_var <-
-    aov(formula(trait_value ~ group_number * treatment  + var / treatment),
+    aov(formula(trait_value ~ 1 + group_number * treatment),
+        data = data)
+  repeated <-
+    aov(formula(trait_value ~ group_number:var + group_number * treatment),
+        data = data)
+  repeated_no_int <-
+    aov(formula(trait_value ~ group_number:var + group_number + treatment),
         data = data)
 
-  model.set <- list(simplest, interacting, repeated_by_var)
-  model.names <- c("simplest", "interacting", "repeated_by_var")
+  model.set <- list(simple, interacting, repeated, repeated_no_int)
+  model.names <- c('simple', "interacting", "repeated", "repeated_no_int")
 
   model_name <- AICcmodavg::aictab(model.set,
                                    modnames = model.names) %>%
@@ -49,7 +54,7 @@ best_aoc <- function(data) {
     head(1) %>%
     .[[1, 'Modnames']]
 
-  model.set[which(model.names == model_name)] %>%
+  model.set[[which(model.names == model_name)]] %>%
     return()
 }
 
@@ -89,11 +94,6 @@ p_stars <- function(x) {
 }
 
 summarize_table_local <- function(input_table,
-                                  lm.model = {
-                                    trait_value ~ 1 +
-                                      group_number +
-                                      treatment
-                                  },
                                   out.path = 'reports/test.xlsx',
                                   debug = IGNORE_REPORTS) {
   #implies model trait_value ~ 1 + group_number + treatment,
@@ -115,7 +115,7 @@ summarize_table_local <- function(input_table,
 
     models_table <- input_table %>%
       dplyr::group_by(trait, grouping_gene) %>%
-      dplyr::do(model = lm(lm.model, data = .))
+      dplyr::do(model = lm(best_aov(.)$call$formula, data = .))
 
     lsmeans_table <- models_table %>%
       dplyr::mutate(lsm_each = list(broom::tidy(emmeans::lsmeans(
@@ -126,7 +126,7 @@ summarize_table_local <- function(input_table,
 
     signif_table <- input_table %>%
       dplyr::group_by(trait, grouping_gene) %>%
-      dplyr::do(aov = broom::tidy(aov(lm.model, data = .))) %>%
+      dplyr::do(aov = broom::tidy(best_aov(.))) %>%
       tidyr::unnest(aov) %>%
       dplyr::filter(term != 'Residuals') %>%
       dplyr::mutate(p.value = p_stars(p.value)) %>%
@@ -217,17 +217,18 @@ report_violins <- function(table) {
   }
 }
 
-try_gaussianize_or_break <- function(data){
+try_normalize_or_NA <- function(data){
   tryCatch(
     expr = {
-      new_val <- LambertW::Gaussianize(data = data,
-                                       type = 'hh',
-                                       method = 'MLE')
+      new_val <- bestNormalize::bestNormalize(data,
+                                              allow_orderNorm = FALSE,
+                                              standardize = FALSE,
+                                              out_of_sample = FALSE)$x.t
       return(new_val)
     },
     error = function(e){
       print(e)
-      message('LambertW::Gaussianize returned an error! Deleting the cell')
+      message('bestNormalize returned an error! Deleting the cell')
       return(NA)
     }
   )
@@ -456,14 +457,18 @@ if (!IGNORE_REPORTS) {(
 # in each cluster replace tech repeats by median -----
 merged_table <- merged_table %>%
   dplyr::group_by(v_t_r, trait, dbscan_cluster) %>%
-  dplyr::mutate(trait_value = median(trait_value)) %>%
+  # dplyr::mutate(trait_value = median(trait_value)) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(dbscan_cluster) %>%
+  # dplyr::mutate(timestamp = median(timestamp)) %>%
   dplyr::ungroup() %>%
   dplyr::distinct()
 
 # selected time interval, filtration -----
 selected_table <- merged_table %>%
   dplyr::filter(timestamp >= time_before) %>%
-  dplyr::filter(timestamp <= time_after)
+  dplyr::filter(timestamp <= time_after) %>%
+  dplyr::distinct()
 
 checkmate::assert_tibble(selected_table, min.rows = 10)
 
@@ -526,22 +531,12 @@ summarize_table_local(logit_table,
 
 remove(selected_table)
 
-# normalize distribution in each subgroup -----
-logit_gaus_table <-
-  logit_table %>% # normalize for each trait
-  dplyr::group_by(trait) %>%
-  dplyr::mutate(trait_value = try_gaussianize_or_break(trait_value)) %>%
+# normalize distribution in each trait_value -----
+logit_gaus_table <- logit_table %>% # normalize for each trait
+  dplyr::group_by(trait, grouping_gene) %>%
+  dplyr::mutate(trait_value = try_normalize_or_NA(trait_value)) %>%
   dplyr::ungroup() %>%
   tidyr::drop_na(trait_value)
-
-# remove degenerate groups -----
-logit_gaus_table <- logit_gaus_table %>%
-  dplyr::group_by(trait) %>%
-  dplyr::mutate(degenerate = (dplyr::n_distinct(group_number) - 1) *
-                  (dplyr::n_distinct(treatment) - 1) == 0) %>%
-  dplyr::filter(degenerate == FALSE) %>%
-  dplyr::select(-degenerate) %>%
-  dplyr::ungroup()
 
 make_report(logit_gaus_table,
             logit_numeric_colnames,
@@ -552,22 +547,14 @@ summarize_table_local(logit_gaus_table,
                       out.path = 'reports/after_normalization.xlsx')
 
 # clean redundant tables -----
-remove(list = c('selected_table',
-                'logit_table'))
+remove(logit_table)
 
 # prepare violins -----
 nested_table <- logit_gaus_table %>%
   dplyr::nest_by(trait, grouping_gene, .key = 'subdf')
 
-
-
 ANOVA_table <- nested_table %>%
-  dplyr::do(ANOVA = best_aoc(.$subdf))
-
-ANOVA_table <- nested_table %>%
-  dplyr::do(ANOVA = aov(trait_value ~
-                          group_number * treatment +
-                          1 / var, data = .$subdf))
+  dplyr::do(ANOVA = best_aov(.$subdf))
 
 THSD_table <- ANOVA_table %>%
   dplyr::do(THSD = TukeyHSD(.$ANOVA))
@@ -593,6 +580,14 @@ tukeys_groups_table <- nested_table %>%
   dplyr::bind_cols(letter_table) %>%
   tidyr::unnest(tukey_groupings)
 
+# drop cells with not-normal distribution -----
+shapiro_gaus_table <- logit_gaus_table %>%
+  dplyr::group_by(trait) %>%
+  dplyr::mutate(normal = shapiro.test(trait_value)$p > 1e-10) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(normal) %>%
+  dplyr::select(-normal)
+
 remove(list = c(
   'nested_table',
   'ANOVA_table',
@@ -601,7 +596,7 @@ remove(list = c(
   'letter_table'
 ))
 
-printable_table <- logit_gaus_table %>%
+printable_table <- shapiro_gaus_table %>%
   dplyr::mutate(group_number_treatment = paste(group_number,
                                                treatment,
                                                sep = ':')) %>%
@@ -621,7 +616,6 @@ printable_table <- logit_gaus_table %>%
 
 # SHINY APPS -----
 saveRDS(printable_table, file = '.cache/printable_table.rds')
-# shiny::runApp('shiny_violins', launch.browser = TRUE)
-#
+shiny::runApp('shiny_violins', launch.browser = TRUE)
 
 shiny::runApp('shiny_pca', launch.browser = TRUE)
