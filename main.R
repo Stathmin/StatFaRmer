@@ -10,12 +10,12 @@ renv::hydrate(prompt = FALSE)
 here::i_am('README.md')
 set.seed(42)
 
-IGNORE_REPORTS <- TRUE
+IGNORE_REPORTS <- FALSE
 
 
 # project selection -------------------------------------------------------
 
-project <- "project_NO3"
+project <- "project_NO3_07"
 
 phenospex_file <- Sys.glob(paste0("data/",project, '/*_data.zip'))
 unit_file_1 <- Sys.glob(paste0("data/",project, '/*_handmade.csv'))
@@ -174,6 +174,7 @@ make_report <- function(table,
     file.remove('report_timeseries.qmd')
   }
 }
+
 
 report_violins <- function(table) {
   if (!IGNORE_REPORTS) {
@@ -609,13 +610,16 @@ printable_table <- shapiro_gaus_table %>%
     tukeys_groups_table,
     by = c('trait', 'grouping_gene',
            'tukey_grouping', 'tukey_group')
-  )
+  ) %>%
+  tidyr::replace_na(list(tukey_letter = 'a'))
+
+saveRDS(printable_table, file = '.cache/printable_table.rds')
 
 # render violins -----
-#report_violins(printable_table)
+report_violins(printable_table)
 
 # SHINY APPS -----
 saveRDS(printable_table, file = '.cache/printable_table.rds')
-shiny::runApp('shiny_violins', launch.browser = TRUE)
-
-shiny::runApp('shiny_pca', launch.browser = TRUE)
+# shiny::runApp('shiny_violins', launch.browser = TRUE)
+#
+# shiny::runApp('shiny_pca', launch.browser = TRUE)
