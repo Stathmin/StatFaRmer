@@ -3,4 +3,4 @@
 
 
 ## Задачи:
-воспроизвести методы из [этой статьи](https://www.sciencedirect.com/science/article/pii/S0168945223000730) на [данных цифрового фенотипирования Phenospex](data/2022-03-24-Wheat_NO3_#1(b3-6)_20220426_data.zip) с учётом представленных [групп сравнения](data/groups.xlsx).
+воспроизвести методы из [этой статьи](https://www.sciencedirect.com/science/article/pii/S0168945223000730) на [данных цифрового фенотипирования Phenospex](data/project_NO3/2022-03-24-Wheat_NO3_#1(b3-6)_20220426_data.zip) с учётом представленных [групп сравнения](data/project_NO3/groups.xlsx).
