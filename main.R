@@ -620,6 +620,6 @@ report_violins(printable_table)
 
 # SHINY APPS -----
 saveRDS(printable_table, file = '.cache/printable_table.rds')
-# shiny::runApp('shiny_violins', launch.browser = TRUE)
+shiny::runApp('shiny_violins', launch.browser = TRUE)
 #
-# shiny::runApp('shiny_pca', launch.browser = TRUE)
+shiny::runApp('shiny_pca', launch.browser = TRUE)
