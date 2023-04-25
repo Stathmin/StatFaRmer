@@ -85,27 +85,27 @@ ui <- fluidPage(# Application title
         'Grouping factors:',
         grouping_factors,
         multiple = TRUE,
-        selected = 'treatment'
+        selected = c('treatment', 'dbscan_clusters')
       ),
       selectInput(
         'tukey_group',
         'Tukey group:',
         grouping_factors,
         multiple = TRUE,
-        selected = 'treatment'
+        selected = c('treatment', 'dbscan_clusters')
       ),
       selectInput(
         'gene_grouping',
         'Grouping gene:',
         choices = vector_of_groups,
-        selected = vector_of_groups[1]
+        selected = {vector_of_groups %>% tail(1)}
       ),
       selectizeInput(
         'gene_groups',
         'Gene groups:',
-        choices = get_unique(merged_table, vector_of_groups[1]),
+        choices = get_unique(merged_table, {vector_of_groups %>% tail(1)}),
         multiple = TRUE,
-        selected = get_unique(merged_table, vector_of_groups[1])
+        selected = get_unique(merged_table, {vector_of_groups %>% tail(1)})
       ),
       selectInput(
         'treatments',
@@ -153,10 +153,10 @@ ui <- fluidPage(# Application title
       plotOutput("distPlot", height = "800px", width = '200%'),
       tabsetPanel(
         tabPanel(
-          "Discriptive",
-          uiOutput("DISCvarNames"),
-          verbatimTextOutput("DiscriptiveTable"),
-          fluidRow(uiOutput("discriptiveTable_flex"))
+          "Descriptive",
+          uiOutput("DESCvarNames"),
+          verbatimTextOutput("DescriptiveTable"),
+          fluidRow(uiOutput("descriptiveTable_flex"))
         ),
         tabPanel(
           "ANOVA",
@@ -184,7 +184,7 @@ ui <- fluidPage(# Application title
 server <- function(input, output, session) {
   gene_grouping_d <- reactive(input$gene_grouping) %>% debounce(1000)
 
-  observeEvent(input$gene_grouping,
+  observeEvent(gene_grouping_d(),
                {
                  updateSelectizeInput(
                    session,
@@ -194,7 +194,6 @@ server <- function(input, output, session) {
                    server = TRUE
                  )
                }, ignoreInit = TRUE)
-
 
   gene_groups_d <- reactive(input$gene_groups) %>% debounce(1000)
   treatments_d <- reactive(input$treatments) %>% debounce(1000)
@@ -228,7 +227,7 @@ server <- function(input, output, session) {
   )
 
   {
-    local_discriptive <- reactive({
+    local_descriptive <- reactive({
       current_table() %>%
         filter(!is.na(!!sym(out_variables_d()))) %>%
         arrange(!!sym(out_variables_d())) %>%
@@ -269,17 +268,21 @@ server <- function(input, output, session) {
                                  sort(grouping_factors_d()))) == 0
       })
     local_tukey <- reactive(if (tukey_needed()) {
-      TukeyHSD(local_anova()) %>%
+      TukeyHSD(local_anova(), ordered = TRUE) %>%
         purrr::modify_depth(5, \(x) replace_na(x,
                                                replace = 0),
                             .ragged = TRUE)
       } else {NA})
     local_names <- reactive(if (letters_needed()) {
-      generate_label_df(local_tukey(), paste(
-        sort(tukey_group_d()),
-        sep = ':',
-        collapse = ':'
-      ))
+      multcompLetters4(local_anova(), local_tukey()) %>%
+          .[[paste(
+            sort(tukey_group_d()),
+            sep = ':',
+            collapse = ':')]] %>%
+          as.data.frame.list() %>%
+          as_tibble(rownames = 'group') %>%
+          select('group', 'Letters') %>%
+          rename(letter = Letters)
       } else {NA})
     local_table <- reactive(if (letters_needed()) {
       current_table() %>%
@@ -295,8 +298,8 @@ server <- function(input, output, session) {
     output$formula <- renderUI({HTML(as.character(
         div(style = "text-align: center; font-weight: bold;", local_model_d())
       ))})
-    output$discriptiveTable_flex <- renderUI({
-      local_discriptive() %>%
+    output$descriptiveTable_flex <- renderUI({
+      local_descriptive() %>%
         flextable() %>%
         colformat_double(big.mark = ",",
                          digits = 2,
@@ -363,11 +366,13 @@ server <- function(input, output, session) {
                  color = letter,
                  group = letter,
                  fill = letter)) +
-      geom_boxplot(na.rm = TRUE, width=0.1, color="black", alpha=1) +
+      geom_boxplot(na.rm = TRUE, width=0.1,
+                   color="black", alpha=1,
+                   position=position_dodge(width=0.8)) +
       geom_text(aes(label = letter,
                     y = median(!!sym(out_variables_d()), na.rm = TRUE)),
-                color = 'black',
-                size = 20) +
+                color = 'black', size = 20,
+                position=position_dodge(width=0.8)) +
       labs(x = 'time') +
       scale_x_datetime() +
       scale_y_continuous(limits = quantile({local_table()}[out_variables_d()],

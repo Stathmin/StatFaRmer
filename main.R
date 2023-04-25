@@ -13,7 +13,7 @@ set.seed(42)
 
 # project selection -------------------------------------------------------
 
-project <- "project_NO3"
+project <- "project_NO3" # project_NO3 or project_NO3_07
 
 phenospex_file <- Sys.glob(paste0("data/",project, '/*_data.zip'))
 unit_file_1 <- Sys.glob(paste0("data/",project, '/*_handmade.csv'))
@@ -108,6 +108,7 @@ planteye_table <- planteye_table %>%
 remove(list = c('dbscan_cluster', 'hours_eps'))
 
 # remove outlier groups -----
+
 within_groups_not_outliers <- planteye_table %>% #delete over-3-sigmas
   dplyr::group_by(dbscan_cluster) %>%
   dplyr::mutate(dplyr::across(dplyr::where(is.numeric),
@@ -281,8 +282,7 @@ merged_table <- merged_table %>%
   dplyr::mutate(total_numeric = rowSums(pick(where(is.numeric)),
                                         na.rm = TRUE)) %>%
   dplyr::filter(total_numeric != 0) %>%
-  dplyr::select(-total_numeric)  %>%
-  tidyr::drop_na(vector_of_groups)
+  dplyr::select(-total_numeric)
 
 saveRDS(merged_table, file = '.cache/merged_table.rds')
 
@@ -294,3 +294,6 @@ gc(reset = TRUE)
 
 
 shiny::runApp('shiny_experimental', launch.browser = TRUE)
+
+
+merged_table <- readRDS('.cache/merged_table.rds')
