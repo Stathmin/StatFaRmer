@@ -194,7 +194,7 @@ sheet_list <- sheetname_vector %>%
   purrr::map(\(x) readxl::read_xlsx(group_file, sheet = x))
 
 vector_of_groups <- janitor::make_clean_names(sheetname_vector)
-vector_of_groups %>% saveRDS('.cache/vector_of_groups.rds')
+vector_of_groups %>% saveRDS('shiny_experimental/vector_of_groups.rds')
 
 groups_table <-
   purrr::map2_dfr(sheetname_vector,
@@ -284,7 +284,7 @@ merged_table <- merged_table %>%
   dplyr::filter(total_numeric != 0) %>%
   dplyr::select(-total_numeric)
 
-saveRDS(merged_table, file = '.cache/merged_table.rds')
+saveRDS(merged_table, file = 'shiny_experimental/merged_table.rds')
 
 remove(list = ls())
 gc(reset = TRUE)
@@ -296,4 +296,4 @@ gc(reset = TRUE)
 shiny::runApp('shiny_experimental', launch.browser = TRUE)
 
 
-merged_table <- readRDS('.cache/merged_table.rds')
+merged_table <- readRDS('shiny_experimental/merged_table.rds')

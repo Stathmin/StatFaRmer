@@ -5,7 +5,6 @@ library('ggplot2')
 library('multcompView')
 library('broom')
 library('flextable')
-library('here')
 library('moments')
 library('bslib')
 library('viridis')
@@ -38,9 +37,9 @@ generate_label_df <- function(TUKEY, variable) {
 }
 
 merged_table <-
-  readRDS(stringr::str_interp('${{here::here()}}/.cache/merged_table.rds'))
+  readRDS(stringr::str_interp('merged_table.rds'))
 vector_of_groups <-
-  readRDS(stringr::str_interp('${{here::here()}}/.cache/vector_of_groups.rds'))
+  readRDS(stringr::str_interp('vector_of_groups.rds'))
 merged_table[sapply(merged_table, is.infinite)] <- NA
 merged_table <- merged_table %>%
   arrange(timestamp) %>%
@@ -350,8 +349,13 @@ server <- function(input, output, session) {
                         autoWidth = TRUE,
                         ordering = TRUE,
                         dom = 'tBp',
-                        buttons = c('copy', 'csv', 'excel')
-                      ), class = "display") %>%
+                        buttons = list((list(extend = "excel",
+                                       text = "Download Full Results",
+                                       filename = 'descriptive',
+                                       exportOptions = list(
+                                         modifier = list(page = "all")
+                                       )
+                      )))), class = "display") %>%
         DT::renderDataTable() %>%
         fluidPage()
     })
@@ -378,8 +382,13 @@ server <- function(input, output, session) {
                         autoWidth = TRUE,
                         ordering = TRUE,
                         dom = 'tBp',
-                        buttons = c('copy', 'csv', 'excel')
-                      ), class = "display") %>%
+                        buttons = list((list(extend = "excel",
+                                             text = "Download Full Results",
+                                             filename = 'anova',
+                                             exportOptions = list(
+                                               modifier = list(page = "all")
+                                             )
+                        )))), class = "display") %>%
         DT::renderDataTable() %>%
         fluidPage()
     })
@@ -399,14 +408,18 @@ server <- function(input, output, session) {
         DT::datatable(filter="top", selection="multiple", escape=FALSE, style='auto',
                       extensions = 'Buttons',
                       options = list(
-                        paging = TRUE,
                         searching = TRUE,
                         fixedColumns = TRUE,
                         autoWidth = TRUE,
                         ordering = TRUE,
                         dom = 'tBp',
-                        buttons = c('copy', 'csv', 'excel')
-                      ), class = "display") %>%
+                        buttons = list((list(extend = "excel",
+                                             text = "Download Full Results",
+                                             filename = 'tukey',
+                                             exportOptions = list(
+                                               modifier = list(page = "all")
+                                             )
+                        )))), class = "display") %>%
         DT::renderDataTable() %>%
         fluidPage()
     } else {
@@ -427,8 +440,13 @@ server <- function(input, output, session) {
                         autoWidth = TRUE,
                         ordering = TRUE,
                         dom = 'tBp',
-                        buttons = c('copy', 'csv', 'excel')
-                      ), class = "display") %>%
+                        buttons = list((list(extend = "excel",
+                                             text = "Download Full Results",
+                                             filename = 'letters',
+                                             exportOptions = list(
+                                               modifier = list(page = "all")
+                                             )
+                        )))), class = "display") %>%
         DT::renderDataTable() %>%
         fluidPage()
     } else {
@@ -448,8 +466,13 @@ server <- function(input, output, session) {
                         autoWidth = TRUE,
                         ordering = TRUE,
                         dom = 'tBp',
-                        buttons = c('copy', 'csv', 'excel')
-                      ), class = "display") %>%
+                        buttons = list((list(extend = "excel",
+                                             text = "Download Full Results",
+                                             filename = 'raw',
+                                             exportOptions = list(
+                                               modifier = list(page = "all")
+                                             )
+                        )))), class = "display") %>%
         DT::renderDataTable() %>%
         fluidPage()
     })

@@ -1,0 +1,13 @@
+name: StatFaRmer
+title: StatFaRmer
+username:
+account: stathmin
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 8957856
+bundleId: 7138249
+url: https://stathmin.shinyapps.io/StatFaRmer/
+when: 1682513201.67311
+lastSyncTime: 1682513201.67315
+asMultiple: FALSE
+asStatic: FALSE
