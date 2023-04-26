@@ -12,7 +12,6 @@ library('viridis')
 
 options(shiny.reactlog=TRUE)
 set.seed(42)
-multidplyr_cluster <- multidplyr::new_cluster(parallelly::availableCores(omit = 2))
 
 formulate <- function(RHS, LHF) {
   if (length(LHF) == 0) {
@@ -144,14 +143,25 @@ ui <- fluidPage(# Application title
         'Facet formula',
         value = 'treatment ~ timestamp_group',
         placeholder = 'treatment ~ timestamp_group'
+      ),
+      checkboxInput(
+        'deltas',
+        ': use deltas',
+        FALSE
       )
 
     ),
 
     mainPanel(
       uiOutput("formula"),
-      plotOutput("distPlot", height = "800px", width = '200%'),
+      plotOutput("distPlot", height = "800px", width = '1200px'),
       tabsetPanel(
+        tabPanel(
+          "Raw Table",
+          uiOutput("RAW"),
+          verbatimTextOutput("raw"),
+          fluidRow(uiOutput("raw_flex"))
+        ),
         tabPanel(
           "Descriptive",
           uiOutput("DESCvarNames"),
@@ -175,10 +185,11 @@ ui <- fluidPage(# Application title
           uiOutput("TUKEYLvarNames"),
           verbatimTextOutput("tukeyLetters"),
           fluidRow(uiOutput("tukeyLetters_flex"))
-        ),
-      ),
+        )
+      )
     )
-  ))
+  )
+)
 
 # Define server logic required to draw a histogram
 server <- function(input, output, session) {
@@ -210,7 +221,7 @@ server <- function(input, output, session) {
   tukey_group_d <- reactive({
     sort(input$tukey_group)}) %>% debounce(1000)
 
-  current_table <- reactive(
+  initial_table <- reactive({
     merged_table %>%
       filter(
         treatment %in% treatments_d(),
@@ -223,8 +234,37 @@ server <- function(input, output, session) {
       unite(group,
             !!sort(tukey_group_d()),
             sep = ":",
-            remove = FALSE)
-  )
+            remove = FALSE) %>%
+      select(-c(where(is.numeric), -!!out_variables_d()))
+  })
+  current_table <- reactive(if (input$deltas){
+    initial_table() %>%
+      arrange(dbscan_cluster) %>%
+      group_by(v_t_r, dbscan_cluster) %>%
+      mutate(across(
+        any_of(out_variables_d()),
+        \(x) (median(x, na.rm = TRUE)))) %>%
+      ungroup() %>%
+      select(-timestamp) %>%
+      distinct() %>%
+      group_by(v_t_r) %>%
+      mutate(across(
+        any_of(out_variables_d()),
+        \(x) (x - lag(x)))) %>%
+      ungroup() %>%
+      group_by(var) %>%
+      mutate(across(
+        any_of(out_variables_d()),
+        \(x) (x / x[treatment == 1]))) %>%
+      ungroup() %>%
+      mutate(across(where(is.numeric),
+                    ~na_if(., Inf)),
+             across(where(is.numeric),
+                    ~na_if(., -Inf))) %>%
+      drop_na(out_variables_d())
+  } else {
+    initial_table()
+  })
 
   {
     local_descriptive <- reactive({
@@ -239,7 +279,6 @@ server <- function(input, output, session) {
         ) %>%
         select(group, !!out_variables_d()) %>%
         group_by(group) %>%
-        multidplyr::partition(multidplyr_cluster) %>%
         summarise(
           n = dplyr::n(),
           median = median(!!rlang::sym(out_variables_d())),
@@ -250,7 +289,6 @@ server <- function(input, output, session) {
           skewness = moments::skewness(!!rlang::sym(out_variables_d())),
           kurtosis = moments::kurtosis(!!rlang::sym(out_variables_d())),
         ) %>%
-        collect() %>%
         ungroup() %>%
         arrange(mean)
     })
@@ -299,15 +337,26 @@ server <- function(input, output, session) {
         div(style = "text-align: center; font-weight: bold;", local_model_d())
       ))})
     output$descriptiveTable_flex <- renderUI({
-      local_descriptive() %>%
-        flextable() %>%
-        colformat_double(big.mark = ",",
-                         digits = 2,
-                         na_str = "N/A") %>%
-        autofit() %>%
-        htmltools_value()
+      local_descriptive()
+      local_descriptive()  %>%
+        mutate(
+          across(where(is.numeric), \(x) round(x, digits = 2))
+        ) %>%
+        DT::datatable(filter="top", selection="multiple", escape=FALSE, style='auto',
+                      extensions = 'Buttons',
+                      options = list(
+                        searching = TRUE,
+                        fixedColumns = TRUE,
+                        autoWidth = TRUE,
+                        ordering = TRUE,
+                        dom = 'tBp',
+                        buttons = c('copy', 'csv', 'excel')
+                      ), class = "display") %>%
+        DT::renderDataTable() %>%
+        fluidPage()
     })
     output$anovaTable_flex <- renderUI({
+      local_anova()
       tidy(local_anova()) %>%
         mutate(
           sig = case_when(
@@ -317,13 +366,22 @@ server <- function(input, output, session) {
             p.value <= 0.1 ~ ".",
             .default = ""
           )
+        )  %>%
+        mutate(
+          across(where(is.numeric), \(x) round(x, digits = 2))
         ) %>%
-        flextable() %>%
-        colformat_double(big.mark = ",",
-                         digits = 2,
-                         na_str = "N/A") %>%
-        autofit() %>%
-        htmltools_value()
+        DT::datatable(filter="top", selection="multiple", escape=FALSE, style='auto',
+                      extensions = 'Buttons',
+                      options = list(
+                        searching = TRUE,
+                        fixedColumns = TRUE,
+                        autoWidth = TRUE,
+                        ordering = TRUE,
+                        dom = 'tBp',
+                        buttons = c('copy', 'csv', 'excel')
+                      ), class = "display") %>%
+        DT::renderDataTable() %>%
+        fluidPage()
     })
     output$tukeyTable_flex <- renderUI(if (tukey_needed()) {
       tidy(local_tukey()) %>%
@@ -338,21 +396,62 @@ server <- function(input, output, session) {
           ),
           across(where(is.numeric), \(x) round(x, digits = 2))
         ) %>%
-        DT::datatable(filter="top", selection="multiple", escape=FALSE, style='auto') %>%
+        DT::datatable(filter="top", selection="multiple", escape=FALSE, style='auto',
+                      extensions = 'Buttons',
+                      options = list(
+                        paging = TRUE,
+                        searching = TRUE,
+                        fixedColumns = TRUE,
+                        autoWidth = TRUE,
+                        ordering = TRUE,
+                        dom = 'tBp',
+                        buttons = c('copy', 'csv', 'excel')
+                      ), class = "display") %>%
         DT::renderDataTable() %>%
         fluidPage()
     } else {
       ''
     })
     output$tukeyLetters_flex <- renderUI(if (letters_needed()) {
-      flextable(
         {local_names() %>%
           rename(!!(paste(tukey_group_d(), collapse = ":")) := "group")
-          }
+        } %>%
+        mutate(
+          across(where(is.numeric), \(x) round(x, digits = 2))
         ) %>%
-        htmltools_value()
+        DT::datatable(filter="top", selection="multiple", escape=FALSE, style='auto',
+                      extensions = 'Buttons',
+                      options = list(
+                        searching = TRUE,
+                        fixedColumns = TRUE,
+                        autoWidth = TRUE,
+                        ordering = TRUE,
+                        dom = 'tBp',
+                        buttons = c('copy', 'csv', 'excel')
+                      ), class = "display") %>%
+        DT::renderDataTable() %>%
+        fluidPage()
     } else {
       ''
+    })
+    output$raw_flex <- renderUI({
+      local_table()
+      local_table() %>%
+        mutate(
+          across(where(is.numeric), \(x) round(x, digits = 2))
+        ) %>%
+        DT::datatable(filter="top", selection="multiple", escape=FALSE, style='auto',
+                      extensions = 'Buttons',
+                      options = list(
+                        searching = TRUE,
+                        fixedColumns = TRUE,
+                        autoWidth = TRUE,
+                        ordering = TRUE,
+                        dom = 'tBp',
+                        buttons = c('copy', 'csv', 'excel')
+                      ), class = "display") %>%
+        DT::renderDataTable() %>%
+        fluidPage()
     })
   }#anova-tukey-letters-output
 
@@ -373,7 +472,9 @@ server <- function(input, output, session) {
                     y = median(!!sym(out_variables_d()), na.rm = TRUE)),
                 color = 'black', size = 20,
                 position=position_dodge(width=0.8)) +
-      labs(x = 'time') +
+      labs(x = 'time', y = ifelse(input$deltas,
+                                  paste0('delta_',out_variables_d()),
+                                  out_variables_d())) +
       scale_x_datetime() +
       scale_y_continuous(limits = quantile({local_table()}[out_variables_d()],
                                            c(0.1, 0.9), na.rm = TRUE)) +
