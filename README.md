@@ -12,5 +12,11 @@ cd primate_metabolomics
 Rscript main.R
 ```
 
+## Выбор проекта:
+В `main.r` замените название эксперимента на название другой папки эксперимента из `data/`:
+```{r}
+project <- "project_NO3"
+```
+
 ## Пример:
 ![красивый график shiny](src/screenshot.png)
