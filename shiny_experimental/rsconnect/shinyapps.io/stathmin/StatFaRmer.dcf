@@ -5,9 +5,9 @@ account: stathmin
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 8957856
-bundleId: 7138249
+bundleId: 7138326
 url: https://stathmin.shinyapps.io/StatFaRmer/
-when: 1682513201.67311
-lastSyncTime: 1682513201.67315
+when: 1682514648.07992
+lastSyncTime: 1682514648.07994
 asMultiple: FALSE
 asStatic: FALSE

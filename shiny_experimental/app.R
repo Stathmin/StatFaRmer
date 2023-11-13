@@ -192,6 +192,8 @@ ui <- fluidPage(# Application title
 
 # Define server logic required to draw a histogram
 server <- function(input, output, session) {
+  set.seed(42)
+  
   gene_grouping_d <- reactive(input$gene_grouping) %>% debounce(1000)
 
   observeEvent(gene_grouping_d(),
@@ -356,7 +358,7 @@ server <- function(input, output, session) {
                                          modifier = list(page = "all")
                                        )
                       )))), class = "display") %>%
-        DT::renderDataTable() %>%
+        DT::renderDataTable(server = FALSE) %>%
         fluidPage()
     })
     output$anovaTable_flex <- renderUI({
@@ -389,7 +391,7 @@ server <- function(input, output, session) {
                                                modifier = list(page = "all")
                                              )
                         )))), class = "display") %>%
-        DT::renderDataTable() %>%
+        DT::renderDataTable(server = FALSE) %>%
         fluidPage()
     })
     output$tukeyTable_flex <- renderUI(if (tukey_needed()) {
@@ -420,7 +422,7 @@ server <- function(input, output, session) {
                                                modifier = list(page = "all")
                                              )
                         )))), class = "display") %>%
-        DT::renderDataTable() %>%
+        DT::renderDataTable(server = FALSE) %>%
         fluidPage()
     } else {
       ''
@@ -447,7 +449,7 @@ server <- function(input, output, session) {
                                                modifier = list(page = "all")
                                              )
                         )))), class = "display") %>%
-        DT::renderDataTable() %>%
+        DT::renderDataTable(server = FALSE) %>%
         fluidPage()
     } else {
       ''
@@ -473,7 +475,7 @@ server <- function(input, output, session) {
                                                modifier = list(page = "all")
                                              )
                         )))), class = "display") %>%
-        DT::renderDataTable() %>%
+        DT::renderDataTable(server = FALSE) %>%
         fluidPage()
     })
   }#anova-tukey-letters-output
@@ -481,26 +483,31 @@ server <- function(input, output, session) {
   facet_formula_d <-
     reactive(as.formula(input$facet_formula)) %>% debounce(3000)
 
-  output$distPlot <- renderPlot({
+  output$distPlot <- renderPlot(execOnResize = FALSE, {
     local_table() %>%
       ggplot(aes(x = as.POSIXct(timestamp_group, tz = 'UTC'),
                  y = !!sym(out_variables_d()),
                  color = letter,
                  group = letter,
                  fill = letter)) +
-      geom_boxplot(na.rm = TRUE, width=0.1,
+      geom_violin(na.rm = TRUE, width=0.1,
                    color="black", alpha=1,
+                   draw_quantiles = c(0.25, 0.5, 0.75),
                    position=position_dodge(width=0.8)) +
+      geom_jitter(height = 0, width = 0.1, color="black", alpha = 0.3) +
       geom_text(aes(label = letter,
-                    y = median(!!sym(out_variables_d()), na.rm = TRUE)),
-                color = 'black', size = 20,
+                    y = quantile(!!sym(out_variables_d()),
+                                       probs = seq(0, 1, .05),
+                                       na.rm = TRUE)['100%'] * 1.01
+                    ),
+                color = 'black', size = 4, vjust = 1, check_overlap = TRUE,
                 position=position_dodge(width=0.8)) +
       labs(x = 'time', y = ifelse(input$deltas,
                                   paste0('delta_',out_variables_d()),
                                   out_variables_d())) +
       scale_x_datetime() +
-      scale_y_continuous(limits = quantile({local_table()}[out_variables_d()],
-                                           c(0.1, 0.9), na.rm = TRUE)) +
+      # scale_y_continuous(limits = quantile({local_table()}[out_variables_d()],
+      #                                      c(0, 1), na.rm = TRUE)) +
       scale_fill_viridis(discrete = TRUE) +
       facet_grid(facet_formula_d(), labeller = label_both, scales = 'free_x') +
       theme_gray() +

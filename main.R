@@ -20,8 +20,6 @@ unit_file_1 <- Sys.glob(paste0("data/",project, '/*_handmade.csv'))
 unit_file_2 <- Sys.glob(paste0("data/",project, '/*_translation.csv'))
 group_file <- Sys.glob(paste0("data/",project, '/groups.xlsx'))
 
-remove('times')
-
 # functions -----
 `%>%` <- magrittr::`%>%`
 
@@ -58,22 +56,22 @@ p_stars <- function(x) {
 }
 
 
-try_normalize_or_NA <- function(data){
-  tryCatch(
-    expr = {
-      new_val <- bestNormalize::bestNormalize(data,
-                                              allow_orderNorm = FALSE,
-                                              standardize = FALSE,
-                                              out_of_sample = FALSE)$x.t
-      return(new_val)
-    },
-    error = function(e){
-      print(e)
-      message('bestNormalize returned an error! Deleting the cell')
-      return(NA)
-    }
-  )
-}
+# try_normalize_or_NA <- function(data){
+#   tryCatch(
+#     expr = {
+#       new_val <- bestNormalize::bestNormalize(data,
+#                                               allow_orderNorm = FALSE,
+#                                               standardize = FALSE,
+#                                               out_of_sample = FALSE)$x.t
+#       return(new_val)
+#     },
+#     error = function(e){
+#       print(e)
+#       message('bestNormalize returned an error! Deleting the cell')
+#       return(NA)
+#     }
+#   )
+# }
 
 # import planteye table -----
 planteye_table <- readr::read_csv(phenospex_file) %>%
@@ -161,7 +159,10 @@ minus_inf_replacement <- planteye_table %>%
   floor()
 
 planteye_table <- planteye_table %>%
-  dplyr::mutate(dplyr::across(dplyr::contains('_logit'), \(x) dplyr::if_else(is.infinite(x), minus_inf_replacement, x)))
+  dplyr::mutate(dplyr::across(dplyr::contains('_logit'),
+                              \(x) dplyr::if_else(is.infinite(x),
+                                                  minus_inf_replacement,
+                                                  x)))
 
 logit_numeric_colnames <- planteye_table %>%
   dplyr::select(dplyr::where(is.numeric)) %>%
@@ -172,51 +173,53 @@ logit_numeric_colnames <- planteye_table %>%
 #   dplyr::mutate(dplyr::across(dplyr::where(is.numeric), \(x) try_normalize_or_NA(x)))
 
 # import unit data -----
-unit_table_1 <- readr::read_csv(unit_file_1)
+unit_table_1 <- readr::read_csv(unit_file_1) %>%
+  dplyr::rename(dplyr::all_of(c(repetition = 'Repeat')))
 unit_table_2 <- readr::read_csv(unit_file_2)
 
 unit_table <- unit_table_1 %>%
   dplyr::left_join(unit_table_2, by = 'V.T.R') %>%
-  janitor::clean_names() %>%
-  dplyr::rename(repetition = `repeat`)
+  janitor::clean_names()
 
 remove(list = c('unit_file_1', 'unit_file_2',
                 'unit_table_1', 'unit_table_2')
        )
 
 # import groups table -----
-excel <- readxl::read_xlsx(group_file)
+if (length(group_file) > 0) {
+  excel <- readxl::read_xlsx(group_file)
 
-sheetname_vector <- readxl::excel_sheets(group_file) %>%
-  unlist()
+  sheetname_vector <- readxl::excel_sheets(group_file) %>%
+    unlist()
 
-sheet_list <- sheetname_vector %>%
-  purrr::map(\(x) readxl::read_xlsx(group_file, sheet = x))
+  sheet_list <- sheetname_vector %>%
+    purrr::map(\(x) readxl::read_xlsx(group_file, sheet = x))
 
-vector_of_groups <- janitor::make_clean_names(sheetname_vector)
-vector_of_groups %>% saveRDS('shiny_experimental/vector_of_groups.rds')
+  vector_of_groups <- janitor::make_clean_names(sheetname_vector)
+  vector_of_groups %>% saveRDS('shiny_experimental/vector_of_groups.rds')
 
-groups_table <-
-  purrr::map2_dfr(sheetname_vector,
-                  sheet_list,
-                  \(naming, subtable) subtable %>%
-                    dplyr::mutate(source = naming))
+  groups_table <-
+    purrr::map2_dfr(sheetname_vector,
+                    sheet_list,
+                    \(naming, subtable) subtable %>%
+                      dplyr::mutate(source = naming))
 
-groups_table <- groups_table %>%
-  tidyr::pivot_longer(contains('Вариант'),
-                      names_to = 'group_number',
-                      values_to = 'var') %>%
-  dplyr::select(!contains('...')) %>%
-  tidyr::drop_na() %>%
-  dplyr::mutate(group_number = stringi::stri_replace_all_regex(group_number, '[^\\d]', '')) %>%
-  dplyr::rename(group_principle = source) %>%
-  tidyr::pivot_wider(names_from = group_principle,
-                     values_from = group_number) %>%
-  janitor::clean_names(.)
+  groups_table <- groups_table %>%
+    tidyr::pivot_longer(contains('Вариант'),
+                        names_to = 'group_number',
+                        values_to = 'var') %>%
+    dplyr::select(!contains('...')) %>%
+    tidyr::drop_na() %>%
+    dplyr::mutate(group_number = stringi::stri_replace_all_regex(group_number, '[^\\d]', '')) %>%
+    dplyr::rename(group_principle = source) %>%
+    tidyr::pivot_wider(names_from = group_principle,
+                       values_from = group_number) %>%
+    janitor::clean_names(.)
 
-remove(list = c('group_file', 'excel',
-                'sheet_list', 'sheetname_vector')
-       )
+  remove(list = c('group_file', 'excel',
+                  'sheet_list', 'sheetname_vector')
+         )
+}
 
 # table merge -----
 dim_initial <- dim(planteye_table)
@@ -238,20 +241,24 @@ merged_table <- planteye_table %>%
 
 dim_after_translate <- dim(merged_table)
 
-unit_keys <- unit_table %>%
-  dplyr::select(var) %>%
-  dplyr::distinct() %>%
-  dplyr::pull() %>%
-  sort()
-group_keys <- groups_table %>%
-  dplyr::select(var) %>%
-  dplyr::distinct() %>%
-  dplyr::pull() %>%
-  sort()
-grouping_mismatch_keys <- sym_diff(unit_keys, group_keys)
+if (exists("groups_table")){
+  unit_keys <- unit_table %>%
+    dplyr::select(var) %>%
+    dplyr::distinct() %>%
+    dplyr::pull() %>%
+    sort()
 
-merged_table <- merged_table %>%
-  dplyr::inner_join(groups_table, by = 'var')
+  group_keys <- groups_table %>%
+    dplyr::select(var) %>%
+    dplyr::distinct() %>%
+    dplyr::pull() %>%
+    sort()
+
+  grouping_mismatch_keys <- sym_diff(unit_keys, group_keys)
+
+  merged_table <- merged_table %>%
+    dplyr::inner_join(groups_table, by = 'var')
+}
 
 merged_table <- merged_table %>%
   dplyr::select(-treatment.x) %>%
@@ -261,7 +268,8 @@ merged_table <- merged_table %>%
     treatment = as.character(treatment),
     repetition = as.character(repetition),
     plant = as.character(plant)
-  )
+  ) %>%
+  janitor::remove_constant()
 
 dim_after_group <- dim(merged_table)
 
@@ -283,6 +291,27 @@ merged_table <- merged_table %>%
                                         na.rm = TRUE)) %>%
   dplyr::filter(total_numeric != 0) %>%
   dplyr::select(-total_numeric)
+
+mean_table <- merged_table %>%
+  dplyr::group_by(unit, dbscan_cluster) %>%
+  dplyr::summarise(
+    dplyr::across(
+      dplyr::where(is.numeric),
+      \(x) median(x, na.rm = TRUE)
+    )
+  ) %>%
+  dplyr::ungroup() %>%
+  janitor::remove_constant(na.rm = TRUE)
+
+merged_table <- merged_table %>%
+  dplyr::select(
+    -dplyr::where(is.numeric)
+  ) %>%
+  dplyr::left_join(mean_table, by = c("unit", "dbscan_cluster")) %>%
+  dplyr::group_by(unit, dbscan_cluster) %>%
+  dplyr::slice(1) %>%
+  dplyr::ungroup()
+
 
 saveRDS(merged_table, file = 'shiny_experimental/merged_table.rds')
 
