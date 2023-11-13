@@ -5,3 +5,4 @@
 *.rmarkdown
 *.html
 /.quarto/
+profiler.R
