@@ -193,7 +193,7 @@ ui <- fluidPage(# Application title
 # Define server logic required to draw a histogram
 server <- function(input, output, session) {
   set.seed(42)
-  
+
   gene_grouping_d <- reactive(input$gene_grouping) %>% debounce(1000)
 
   observeEvent(gene_grouping_d(),

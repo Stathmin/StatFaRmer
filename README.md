@@ -7,10 +7,12 @@
 
 ## Установка:
 ```{bash}
-git clone --branch daniel https://github.com/Stathmin/primate_metabolomics
-cd primate_metabolomics
+git clone https://github.com/Stathmin/Wheat_Nitrates_2022
+cd Wheat_Nitrates_2022
 Rscript main.R
 ```
 
 ## Пример:
+Пример реализации доступен [здесь](https://stathmin.shinyapps.io/StatFaRmer/).
 ![красивый график shiny](src/screenshot.png)
+
