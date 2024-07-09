@@ -73,7 +73,7 @@ out_variables <-
 
 # Define UI for application that draws a histogram
 ui <- fluidPage(# Application title
-  titlePanel("Stat FaRmer"),
+  titlePanel("StatFaRmer"),
 
   # Sidebar with a slider input for number of bins
   sidebarLayout(

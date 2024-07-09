@@ -6,3 +6,4 @@
 *.html
 /.quarto/
 profiler.R
+shiny/rsconnect
