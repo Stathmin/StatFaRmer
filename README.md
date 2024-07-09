@@ -47,9 +47,3 @@ Users can upload their own projects to the data folder of StatFaRmer as long as 
 Any additional columns from the last three tables are preserved and accessible for analysis as factors.
 
 The user then can modify **project** and **hours_eps** variables at **main.R, lines 16-18** according to their project name and frequency of repeated measurements/table switches.
-
-## Features
-- In StatFaRmer Shiny App all the tables can be readily downloaded after any inputed filters and subsets (**Download Full Results** button).
-- Facet syntax follows general principles of R formulas. Any variables from **Grouping factors:** list and their sums can be placed on any side of **~**, producing vertical or horizontal faceting of the plot, *~ 1* removes any faceting.
-- ANOVA automatically includes all the grouping factors and their interactions, up-to three-way. Then Tukey group determines which contasts are to check for with the given ANOVA.
-- **dbscan_cluster** is to be used as a standin for timestamp data both for faceting and factor selection.
