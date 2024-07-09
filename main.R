@@ -13,7 +13,9 @@ set.seed(42)
 
 # project selection -------------------------------------------------------
 
-project <- "project_NO3" # project_NO3 or project_NO3_07
+project <- "project_NO3" # name of your project subfolder in data folder
+
+hours_eps <- 1 #time clustering distance in hours
 
 phenospex_file <- Sys.glob(paste0("data/",project, '/*_data.zip'))
 unit_file_1 <- Sys.glob(paste0("data/",project, '/*_handmade.csv'))
@@ -27,25 +29,6 @@ sym_diff <- function(a, b) {
   sort(setdiff(union(a, b), intersect(a, b)))
 }
 
-tidy_CL_cell <- function(CL_column) {
-  #transforms column with objects from multcompView::multcompLetters4(...)
-  #into column with tibbles
-  CL_column %>%
-    purrr::map2(., names(.), ~ {
-      tibble::as_tibble(.x$Letters,
-                        rownames = 'group') %>%
-        dplyr::rename(!!.y := group, tukey_letter = value)
-    }) %>%
-    dplyr::bind_rows() %>%
-    janitor::clean_names() %>%
-    tidyr::pivot_longer(
-      cols = -tukey_letter,
-      names_to = 'tukey_grouping',
-      values_to = 'tukey_group'
-    ) %>%
-    tidyr::drop_na()
-}
-
 p_stars <- function(x) {
   #formating of p-values
   dplyr::case_when(x < 0.001 ~ '***',
@@ -55,24 +38,6 @@ p_stars <- function(x) {
                    .default = ' ')
 }
 
-
-# try_normalize_or_NA <- function(data){
-#   tryCatch(
-#     expr = {
-#       new_val <- bestNormalize::bestNormalize(data,
-#                                               allow_orderNorm = FALSE,
-#                                               standardize = FALSE,
-#                                               out_of_sample = FALSE)$x.t
-#       return(new_val)
-#     },
-#     error = function(e){
-#       print(e)
-#       message('bestNormalize returned an error! Deleting the cell')
-#       return(NA)
-#     }
-#   )
-# }
-
 # import planteye table -----
 planteye_table <- readr::read_csv(phenospex_file) %>%
   janitor::clean_names(.)
@@ -80,7 +45,6 @@ planteye_table <- readr::read_csv(phenospex_file) %>%
 remove(phenospex_file)
 
 # aggregation with dbscan -----
-hours_eps <- 1
 
 planteye_table <- planteye_table %>%
   dplyr::mutate(hours_from_start =
@@ -168,10 +132,6 @@ logit_numeric_colnames <- planteye_table %>%
   dplyr::select(dplyr::where(is.numeric)) %>%
   colnames()
 
-# # normalize distribution in each trait_value -----
-# planteye_table <- planteye_table %>% # normalize for each trait
-#   dplyr::mutate(dplyr::across(dplyr::where(is.numeric), \(x) try_normalize_or_NA(x)))
-
 # import unit data -----
 unit_table_1 <- readr::read_csv(unit_file_1) %>%
   dplyr::rename(dplyr::all_of(c(repetition = 'Repeat')))
@@ -187,37 +147,10 @@ remove(list = c('unit_file_1', 'unit_file_2',
 
 # import groups table -----
 if (length(group_file) > 0) {
-  excel <- readxl::read_xlsx(group_file)
+  groups_table = readxl::read_xlsx(group_file) %>%
+    dplyr::mutate(dplyr::across(dplyr::everything(), as.character))
 
-  sheetname_vector <- readxl::excel_sheets(group_file) %>%
-    unlist()
-
-  sheet_list <- sheetname_vector %>%
-    purrr::map(\(x) readxl::read_xlsx(group_file, sheet = x))
-
-  vector_of_groups <- janitor::make_clean_names(sheetname_vector)
-  vector_of_groups %>% saveRDS('shiny_experimental/vector_of_groups.rds')
-
-  groups_table <-
-    purrr::map2_dfr(sheetname_vector,
-                    sheet_list,
-                    \(naming, subtable) subtable %>%
-                      dplyr::mutate(source = naming))
-
-  groups_table <- groups_table %>%
-    tidyr::pivot_longer(contains('Вариант'),
-                        names_to = 'group_number',
-                        values_to = 'var') %>%
-    dplyr::select(!contains('...')) %>%
-    tidyr::drop_na() %>%
-    dplyr::mutate(group_number = stringi::stri_replace_all_regex(group_number, '[^\\d]', '')) %>%
-    dplyr::rename(group_principle = source) %>%
-    tidyr::pivot_wider(names_from = group_principle,
-                       values_from = group_number) %>%
-    janitor::clean_names(.)
-
-  remove(list = c('group_file', 'excel',
-                  'sheet_list', 'sheetname_vector')
+  remove(list = c('group_file')
          )
 }
 
@@ -243,13 +176,13 @@ dim_after_translate <- dim(merged_table)
 
 if (exists("groups_table")){
   unit_keys <- unit_table %>%
-    dplyr::select(var) %>%
+    dplyr::select(cultivar) %>%
     dplyr::distinct() %>%
     dplyr::pull() %>%
     sort()
 
   group_keys <- groups_table %>%
-    dplyr::select(var) %>%
+    dplyr::select(cultivar) %>%
     dplyr::distinct() %>%
     dplyr::pull() %>%
     sort()
@@ -257,7 +190,7 @@ if (exists("groups_table")){
   grouping_mismatch_keys <- sym_diff(unit_keys, group_keys)
 
   merged_table <- merged_table %>%
-    dplyr::inner_join(groups_table, by = 'var')
+    dplyr::inner_join(groups_table, by = 'cultivar')
 }
 
 merged_table <- merged_table %>%
@@ -313,7 +246,12 @@ merged_table <- merged_table %>%
   dplyr::ungroup()
 
 
-saveRDS(merged_table, file = 'shiny_experimental/merged_table.rds')
+saveRDS(merged_table, file = 'shiny/merged_table.rds')
+merged_table %>%
+  select(where(is.character)) %>%
+  colnames() %>%
+  {.[!. %in% c("unit","v_t_r","cultivar")]} %>%
+  saveRDS(file = 'shiny/vector_of_groups.rds')
 
 remove(list = ls())
 gc(reset = TRUE)
@@ -322,7 +260,9 @@ gc(reset = TRUE)
 # shiny -------------------------------------------------------------------
 
 
-shiny::runApp('shiny_experimental', launch.browser = TRUE)
+#merged_table <- readRDS('shiny/merged_table.rds') #For debug
+#reactlog::reactlog_enable()
 
-#merged_table <- readRDS('shiny_experimental/merged_table.rds')
+shiny::runApp('shiny', launch.browser = TRUE)
 
+#shiny::reactlogShow()
