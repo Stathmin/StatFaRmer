@@ -4,6 +4,8 @@
 .Ruserdata
 *.rmarkdown
 *.html
+*.rds
 /.quarto/
 profiler.R
 shiny/rsconnect
+data/Stathmin StatFaRmer b3ebd23117acb027089946c2fc758ee7ce110f8b data-project_NO3_07.zip

@@ -27,14 +27,20 @@ git clone https://github.com/Stathmin/StatFarmer
 ```
 
 ## Running Example
-The initial run sets up the environment, creates necessary files, and launches the Shiny app:
+To install the project and its environment, run
+```bash
+Rscript install.R
+```
+The initial run processes tables, creates necessary files and launches the Shiny app:
 ```bash
 Rscript main.R
 ```
-After the first run, you can start the Shiny app separately with:
+After the initial run, you can start the Shiny app separately with:
 ```bash
 Rscript just_shiny.R
 ```
+
+The code above is written in Bash, ; however, it can be seamlessly replaced by utilizing RStudio. To do so, simply open "StatFaRmer.Rproj" within RStudio, proceed to execute the "install.R" script, and run the "main.R" application through the interface provided by RStudio. After closing the StatFaRmer page in the browser, remember to properly terminate its execution in RStudio by pressing the "ESC" key.
 
 To explore the functionality of the Shiny Dashboard, navigate to the interactive example available [here](https://stathmin.shinyapps.io/StatFaRmer/).
 
@@ -43,7 +49,7 @@ Users can upload their own projects to the data folder of StatFaRmer as long as 
 - Includes an initial archived (.zip with .csv) TraitFinder experiment
 - Includes a *_handmade.csv table with mandatory **V.T.R**, **Treatment** (overrides Treatments in initial table), and **Cultivar** columns
 - Includes a *_translation.csv table with mandatory **V.T.R** and **T:X:Y** columns
-- Includes a groups.xlsx table with a mandatory **cultivar** column
+- Includes a groups.xlsx table with a mandatory **cultivar** column. Other columns should consist solely of Roman letters, digits, and underscores to ensure the proper functioning of "multcompView::multcompLetters4".
 
 Any additional columns from the last three tables are preserved and accessible for analysis as factors.
 

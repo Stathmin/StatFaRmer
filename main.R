@@ -6,7 +6,6 @@ gc(reset = TRUE)
 
 # renv -----
 renv::activate()
-renv::hydrate(prompt = FALSE)
 here::i_am('README.md')
 set.seed(42)
 
@@ -248,7 +247,7 @@ merged_table <- merged_table %>%
 
 saveRDS(merged_table, file = 'shiny/merged_table.rds')
 merged_table %>%
-  select(where(is.character)) %>%
+  dplyr::select(where(is.character)) %>%
   colnames() %>%
   {.[!. %in% c("unit","v_t_r","cultivar")]} %>%
   saveRDS(file = 'shiny/vector_of_groups.rds')
