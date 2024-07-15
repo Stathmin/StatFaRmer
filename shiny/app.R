@@ -8,6 +8,7 @@ library('flextable')
 library('moments')
 library('bslib')
 library('viridis')
+library('svglite')
 
 options(shiny.reactlog = TRUE)
 set.seed(42)
