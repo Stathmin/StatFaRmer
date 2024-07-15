@@ -36,6 +36,7 @@ generate_label_df <- function(TUKEY, variable) {
   return(Tukey.labels)
 }
 
+
 merged_table <-
   readRDS(stringr::str_interp('merged_table.rds'))
 vector_of_groups <-
@@ -130,11 +131,8 @@ ui <- fluidPage(# Application title
         inputId = "timestamp_groups",
         label = "Selected time clusters:",
         choices = named_timestamp_groups,
-        selected = named_timestamp_groups[c(1,
-                                            round(
-                                              length(named_timestamp_groups) /2
-                                              ),
-                                            length(named_timestamp_groups))] %>%
+        selected = named_timestamp_groups[c(1, round(length(named_timestamp_groups) /
+                                                       2), length(named_timestamp_groups))] %>%
           as.character(),
         options = shinyWidgets::pickerOptions(actionsBox = TRUE, size = 10),
         multiple = TRUE
@@ -152,8 +150,9 @@ ui <- fluidPage(# Application title
         value = 'treatment ~ timestamp_group',
         placeholder = 'treatment ~ timestamp_group'
       ),
-      checkboxInput('deltas', ': use deltas', FALSE)
+      checkboxInput('deltas', ': use deltas', FALSE),
 
+      downloadButton("savePlot", "Save Plot as SVG")
     ),
 
     mainPanel(
@@ -205,7 +204,6 @@ server <- function(input, output, session) {
   })
 
   observeEvent(gene_grouping_d(), {
-
     updateFlag(FALSE)
 
     isolate({
@@ -546,15 +544,17 @@ server <- function(input, output, session) {
   facet_formula_d <-
     reactive(as.formula(input$facet_formula)) %>% debounce(3000)
 
-  output$distPlot <- renderPlot(execOnResize = FALSE, {
+  plot_d <- reactive(
     local_table() %>%
-      ggplot(aes(
-        x = as.POSIXct(timestamp_group, tz = 'UTC'),
-        y = !!sym(out_variables_d()),
-        color = letter,
-        group = letter,
-        fill = letter
-      )) +
+      ggplot(
+        aes(
+          x = as.POSIXct(timestamp_group, tz = 'UTC'),
+          y = !!sym(out_variables_d()),
+          color = letter,
+          group = letter,
+          fill = letter
+        )
+      ) +
       geom_violin(
         na.rm = TRUE,
         width = 0.1,
@@ -585,25 +585,46 @@ server <- function(input, output, session) {
         vjust = 1,
         position = position_dodge(width = 0.8)
       ) +
-      labs(x = 'time',
-           y = ifelse(
-             input$deltas,
-             paste0('delta_', out_variables_d()),
-             out_variables_d()
-           )) +
+      labs(
+        x = 'time',
+        y = ifelse(
+          input$deltas,
+          paste0('delta_', out_variables_d()),
+          out_variables_d()
+        )
+      ) +
       scale_x_datetime() +
       scale_fill_viridis(discrete = TRUE) +
-      facet_grid(facet_formula_d(),
-                 labeller = label_both,
-                 scales = 'free_x') +
+      facet_grid(
+        facet_formula_d(),
+        labeller = label_both,
+        scales = 'free_x'
+      ) +
       theme_gray() +
       theme(
         text = element_text(size = 12),
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank()
       )
+  )
 
+  output$distPlot <- renderPlot(execOnResize = FALSE, {
+    plot_d()
   })
+
+  output$savePlot <- downloadHandler(
+    filename = function() {
+      "plot.svg"
+    },
+    content = function(file) {
+      plot <- plot_d()
+      local_model <- local_model_d()
+      ggsave(file, plot + ggtitle(local_model),
+             device = "svg",
+             width = 16,
+             height = 9)
+    }
+  )
 }
 
 # Run the application
