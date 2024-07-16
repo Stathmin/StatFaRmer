@@ -204,6 +204,38 @@ server <- function(input, output, session) {
 
   combined_inputs <- reactiveValues()
 
+  create_initial_combined_inputs <- reactive({
+    list(
+      gene_grouping = isolate(input$gene_grouping),
+      gene_groups = isolate(input$gene_groups),
+      treatments = isolate(input$treatments),
+      cultivars = isolate(input$cultivars),
+      timestamp_groups = isolate(unname(input$timestamp_groups)),
+      out_variables = isolate(input$out_variables),
+      facet_formula = isolate(as.formula(input$facet_formula)),
+      grouping_factors = isolate(sort(input$grouping_factors)),
+      tukey_group = isolate(sort(input$tukey_group)),
+      timeseries_plot = isolate(input$timeseries_plot),
+      deltas = isolate(input$deltas)
+    )
+  })
+
+  observe({
+    initial_combined_inputs <- create_initial_combined_inputs()
+
+    combined_inputs$gene_grouping <- initial_combined_inputs$gene_grouping
+    combined_inputs$gene_groups <- initial_combined_inputs$gene_groups
+    combined_inputs$treatments <- initial_combined_inputs$treatments
+    combined_inputs$cultivars <- initial_combined_inputs$cultivars
+    combined_inputs$timestamp_groups <- initial_combined_inputs$timestamp_groups
+    combined_inputs$out_variables <- initial_combined_inputs$out_variables
+    combined_inputs$facet_formula <- initial_combined_inputs$facet_formula
+    combined_inputs$grouping_factors <- initial_combined_inputs$grouping_factors
+    combined_inputs$tukey_group <- initial_combined_inputs$tukey_group
+    combined_inputs$timeseries_plot <- initial_combined_inputs$timeseries_plot
+    combined_inputs$deltas <- initial_combined_inputs$deltas
+  }, priority = 50)
+
   observeEvent(input$submit, {
     combined_inputs$gene_grouping = isolate(input$gene_grouping)
     combined_inputs$gene_groups = isolate(input$gene_groups)
@@ -578,6 +610,7 @@ server <- function(input, output, session) {
                    }#anova-tukey-letters-output
 
                    if (!combined_inputs$timeseries_plot){
+                     set.seed(42)
                      plot_d <- {
                        local_table %>%
                          ggplot(aes(
@@ -636,6 +669,7 @@ server <- function(input, output, session) {
                          )
                      }
                    } else {
+                     set.seed(42)
                      plot_d <- {
                        local_table %>%
                          ggplot(aes(
