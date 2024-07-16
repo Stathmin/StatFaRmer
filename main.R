@@ -260,8 +260,8 @@ gc(reset = TRUE)
 
 
 #merged_table <- readRDS('shiny/merged_table.rds') #For debug
-reactlog::reactlog_enable()
+#reactlog::reactlog_enable()
 
 #shiny::runApp('shiny', launch.browser = TRUE)
 shiny::runApp('shiny/other_app.R', launch.browser = TRUE)
-shiny::reactlogShow()
+#shiny::reactlogShow()
