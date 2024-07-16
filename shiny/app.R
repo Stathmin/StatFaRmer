@@ -152,8 +152,10 @@ ui <- fluidPage(# Application title
         placeholder = 'treatment ~ timestamp_group'
       ),
       checkboxInput('deltas', ': use deltas', FALSE),
+      checkboxInput('timeseries_plot', ': plot series', FALSE),
 
-      downloadButton("savePlot", "Save Plot as SVG")
+      downloadButton("savePlot", "Save Plot as SVG"),
+      actionButton("submit", "Submit")
     ),
 
     mainPanel(
@@ -195,437 +197,520 @@ ui <- fluidPage(# Application title
   ))
 
 # Define server logic required to draw a histogram
+
+
 server <- function(input, output, session) {
   set.seed(42)
 
-  updateFlag <- reactiveVal(TRUE)
+  combined_inputs <- reactiveValues()
 
-  gene_grouping_d <- reactive({
-    input$gene_grouping
-  })
+  observeEvent(input$submit, {
+    combined_inputs$gene_grouping = isolate(input$gene_grouping)
+    combined_inputs$gene_groups = isolate(input$gene_groups)
+    combined_inputs$treatments = isolate(input$treatments)
+    combined_inputs$cultivars = isolate(input$cultivars)
+    combined_inputs$timestamp_groups = isolate(unname(input$timestamp_groups))
+    combined_inputs$out_variables = isolate(input$out_variables)
+    combined_inputs$facet_formula = isolate(as.formula(input$facet_formula))
+    combined_inputs$grouping_factors = isolate(sort(input$grouping_factors))
+    combined_inputs$tukey_group = isolate(sort(input$tukey_group))
+    combined_inputs$timeseries_plot = isolate(input$timeseries_plot)
+    combined_inputs$deltas = isolate(input$deltas)
+  }, priority = 50)
 
-  observeEvent(gene_grouping_d(), {
-    updateFlag(FALSE)
+  observeEvent(input$gene_grouping,
+               {
 
-    isolate({
-      updateSelectizeInput(
-        session,
-        'gene_groups',
-        choices = c(),
-        selected = c(),
-        server = TRUE
-      )
-    })
+                 {
+                   unique_groups <- get_unique(merged_table, input$gene_grouping)
 
-    unique_groupings <- get_unique(merged_table, gene_grouping_d())
-    updateSelectizeInput(
-      session,
-      'gene_groups',
-      choices = unique_groupings,
-      selected = unique_groupings,
-      server = TRUE
-    )
+                   if(!setequal(unique_groups, input$gene_groups)) {
+                     isolate(
+                       updateSelectizeInput(
+                         session,
+                         'gene_groups',
+                         choices = c(),
+                         selected = c(),
+                         server = TRUE
+                       )
+                     )
+                     updateSelectizeInput(
+                       session,
+                       'gene_groups',
+                       choices = unique_groups,
+                       selected = unique_groups,
+                       server = TRUE
+                     )
+                   }
+                 }
+               },
+               ignoreInit = FALSE, priority=100)
 
-    updateFlag(TRUE)
+  observeEvent(c(input$gene_groups, input$gene_grouping),
+               {
+                 {
+                   unique_cultivars <- merged_table %>%
+                     filter(!!sym(input$gene_grouping) %in% input$gene_groups) %>%
+                     select('cultivar') %>%
+                     distinct() %>%
+                     arrange() %>%
+                     pull()
 
-  }, ignoreInit = TRUE)
+                   if(!setequal(unique_cultivars, input$cultivars)) {
+                     isolate(
+                       updateSelectizeInput(
+                         session,
+                         'cultivars',
+                         choices = c(),
+                         selected = c(),
+                         server = TRUE
+                       )
+                     )
+                     updateSelectizeInput(
+                       session,
+                       'cultivars',
+                       choices = unique_cultivars,
+                       selected = unique_cultivars,
+                       server = TRUE
+                     )
+                   }
+                 }
+               },
+               ignoreInit = FALSE, priority=75)
 
-  gene_groups_d <- reactive({
-    req(isTRUE(updateFlag()))
-    {
-      input$gene_groups
-    }
-  })
-  treatments_d <- reactive(input$treatments) %>% debounce(1000)
-  cultivars_d <- reactive(input$cultivars) %>% debounce(1000)
-  timestamp_groups_d <-
-    reactive(unname(input$timestamp_groups)) %>% debounce(1000)
-  out_variables_d <- reactive(input$out_variables)
+  observeEvent(c(combined_inputs$treatments, combined_inputs$cultivars,
+                 combined_inputs$timestamp_groups, combined_inputs$out_variables,
+                 combined_inputs$facet_formula, combined_inputs$grouping_factors,
+                 combined_inputs$tukey_group, combined_inputs$deltas),
+               {
 
-  grouping_factors_d <- reactive({
-    sort(input$grouping_factors)
-  }) %>% debounce(1000)
+                 {
+                   local_model_d <- {
+                     formulate(combined_inputs$out_variables, combined_inputs$grouping_factors)
+                   }
 
-  local_model_d <- reactive({
-    formulate(out_variables_d(), grouping_factors_d())
-  })
-  tukey_group_d <- reactive({
-    sort(input$tukey_group)
-  })
+                   initial_table <- {
+                     merged_table %>%
+                       filter(
+                         treatment %in% combined_inputs$treatments,
+                         cultivar %in% combined_inputs$cultivars,
+                         as.character(timestamp_group) %in% as.character(combined_inputs$timestamp_groups),
+                         !!sym(combined_inputs$gene_grouping) %in% combined_inputs$gene_groups
+                       ) %>%
+                       arrange(timestamp_group) %>%
+                       mutate(timestamp_group = as.factor(timestamp_group)) %>%
+                       unite(group,
+                             !!sort(combined_inputs$tukey_group),
+                             sep = ":",
+                             remove = FALSE) %>%
+                       select(-c(where(is.numeric), -!!combined_inputs$out_variables))
+                   }
+                   current_table <- if (combined_inputs$deltas) {
+                     initial_table %>%
+                       arrange(dbscan_cluster) %>%
+                       group_by(v_t_r, dbscan_cluster) %>%
+                       mutate(across(any_of(combined_inputs$out_variables), \(x) (median(x, na.rm = TRUE)))) %>%
+                       ungroup() %>%
+                       select(-timestamp) %>%
+                       distinct() %>%
+                       group_by(v_t_r) %>%
+                       mutate(across(any_of(combined_inputs$out_variables), \(x) (x - lag(x)))) %>%
+                       ungroup() %>%
+                       group_by(cultivar) %>%
+                       mutate(across(any_of(combined_inputs$out_variables), \(x) (x / x[treatment == 1]))) %>%
+                       ungroup() %>%
+                       mutate(across(where(is.numeric), ~ na_if(., Inf)), across(where(is.numeric), ~
+                                                                                   na_if(., -Inf))) %>%
+                       drop_na(combined_inputs$out_variables)
+                   } else {
+                     initial_table
+                   }
 
-  initial_table <- reactive({
-    req(gene_groups_d())
-    req(gene_grouping_d())
-    req(isTRUE(updateFlag()))
+                   {
+                     local_descriptive <- {
+                       current_table %>%
+                         filter(!is.na(!!sym(combined_inputs$out_variables))) %>%
+                         arrange(!!sym(combined_inputs$out_variables)) %>%
+                         unite(group,
+                               !!combined_inputs$tukey_group,
+                               sep = ":",
+                               remove = FALSE) %>%
+                         select(group, !!combined_inputs$out_variables) %>%
+                         group_by(group) %>%
+                         summarise(
+                           n = dplyr::n(),
+                           median = median(!!rlang::sym(combined_inputs$out_variables)),
+                           mean = mean(!!rlang::sym(combined_inputs$out_variables)),
+                           cv_perc = 100 * sd(!!rlang::sym(combined_inputs$out_variables)) / median(!!rlang::sym(combined_inputs$out_variables)),
+                           min = min(!!rlang::sym(combined_inputs$out_variables)),
+                           max = max(!!rlang::sym(combined_inputs$out_variables)),
+                           skewness = moments::skewness(!!rlang::sym(combined_inputs$out_variables)),
+                           kurtosis = moments::kurtosis(!!rlang::sym(combined_inputs$out_variables)),
+                         ) %>%
+                         ungroup() %>%
+                         arrange(mean)
+                     }
+                     local_anova <- {
+                       aov(as.formula(local_model_d), data = current_table)
+                     }
+                     tukey_needed <- {
+                       as.formula(local_model_d) %>%
+                         all.vars() %>%
+                         length() > 1
+                     }
+                     letters_needed <- {
+                       tukey_needed &
+                         length(vecsets::vsetdiff(
+                           sort(combined_inputs$tukey_group),
+                           sort(combined_inputs$grouping_factors)
+                         )) == 0
+                     }
+                     local_tukey <- if (tukey_needed) {
+                       TukeyHSD(local_anova, ordered = TRUE) %>%
+                         purrr::modify_depth(5, \(x) replace_na(x, replace = 0), .ragged = TRUE)
+                     } else {
+                       NA
+                     }
+                     local_names <- if (letters_needed) {
+                       multcompLetters4(local_anova, local_tukey) %>%
+                         .[[paste(sort(combined_inputs$tukey_group),
+                                  sep = ':',
+                                  collapse = ':')]] %>%
+                         as.data.frame.list() %>%
+                         as_tibble(rownames = 'group') %>%
+                         select('group', 'Letters') %>%
+                         rename(letter = Letters)
+                     } else {
+                       NA
+                     }
+                     local_table <- if (letters_needed) {
+                       current_table %>%
+                         filter(!is.na(!!combined_inputs$out_variables)) %>%
+                         left_join(local_names, by = c('group' = 'group'))
+                     } else {
+                       current_table %>%
+                         mutate(letter = '-')
+                     }
+                   }#anova-tukey-letters-calc
 
-    merged_table %>%
-      filter(
-        treatment %in% treatments_d(),
-        cultivar %in% cultivars_d(),
-        as.character(timestamp_group) %in% as.character(timestamp_groups_d()),
-        !!sym(gene_grouping_d()) %in% gene_groups_d()
-      ) %>%
-      arrange(timestamp_group) %>%
-      mutate(timestamp_group = as.factor(timestamp_group)) %>%
-      unite(group,
-            !!sort(tukey_group_d()),
-            sep = ":",
-            remove = FALSE) %>%
-      select(-c(where(is.numeric), -!!out_variables_d()))
-  })
-  current_table <- reactive(if (input$deltas) {
-    req(isTRUE(updateFlag()))
+                   {
+                     output$formula <- renderUI({
+                       HTML(as.character(
+                         div(style = "text-align: center; font-weight: bold;", local_model_d)
+                       ))
+                     })
+                     output$descriptiveTable_flex <- renderUI({
+                       local_descriptive
+                       local_descriptive  %>%
+                         mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%
+                         DT::datatable(
+                           filter = "top",
+                           selection = "multiple",
+                           escape = FALSE,
+                           style = 'auto',
+                           extensions = 'Buttons',
+                           options = list(
+                             searching = TRUE,
+                             fixedColumns = TRUE,
+                             autoWidth = TRUE,
+                             ordering = TRUE,
+                             dom = 'tBp',
+                             buttons = list((
+                               list(
+                                 extend = "excel",
+                                 text = "Download Full Results",
+                                 filename = 'descriptive',
+                                 exportOptions = list(modifier = list(page = "all"))
+                               )
+                             ))
+                           ),
+                           class = "display"
+                         ) %>%
+                         DT::renderDataTable(server = FALSE) %>%
+                         fluidPage()
+                     })
+                     output$anovaTable_flex <- renderUI({
+                       local_anova
+                       tidy(local_anova) %>%
+                         mutate(
+                           sig = case_when(
+                             p.value <= 0.001 ~ "***",
+                             p.value <= 0.01 ~ "**",
+                             p.value <= 0.05 ~ "*",
+                             p.value <= 0.1 ~ ".",
+                             .default = ""
+                           )
+                         )  %>%
+                         mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%
+                         DT::datatable(
+                           filter = "top",
+                           selection = "multiple",
+                           escape = FALSE,
+                           style = 'auto',
+                           extensions = 'Buttons',
+                           options = list(
+                             searching = TRUE,
+                             fixedColumns = TRUE,
+                             autoWidth = TRUE,
+                             ordering = TRUE,
+                             dom = 'tBp',
+                             buttons = list((
+                               list(
+                                 extend = "excel",
+                                 text = "Download Full Results",
+                                 filename = 'anova',
+                                 exportOptions = list(modifier = list(page = "all"))
+                               )
+                             ))
+                           ),
+                           class = "display"
+                         ) %>%
+                         DT::renderDataTable(server = FALSE) %>%
+                         fluidPage()
+                     })
+                     output$tukeyTable_flex <- renderUI(if (tukey_needed) {
+                       tidy(local_tukey) %>%
+                         select(-null.value) %>%
+                         mutate(
+                           sig = case_when(
+                             adj.p.value <= 0.001 ~ "***",
+                             adj.p.value <= 0.01 ~ "**",
+                             adj.p.value <= 0.05 ~ "*",
+                             adj.p.value <= 0.1 ~ ".",
+                             .default = ""
+                           ),
+                           across(where(is.numeric), \(x) round(x, digits = 2))
+                         ) %>%
+                         DT::datatable(
+                           filter = "top",
+                           selection = "multiple",
+                           escape = FALSE,
+                           style = 'auto',
+                           extensions = 'Buttons',
+                           options = list(
+                             searching = TRUE,
+                             fixedColumns = TRUE,
+                             autoWidth = TRUE,
+                             ordering = TRUE,
+                             dom = 'tBp',
+                             buttons = list((
+                               list(
+                                 extend = "excel",
+                                 text = "Download Full Results",
+                                 filename = 'tukey',
+                                 exportOptions = list(modifier = list(page = "all"))
+                               )
+                             ))
+                           ),
+                           class = "display"
+                         ) %>%
+                         DT::renderDataTable(server = FALSE) %>%
+                         fluidPage()
+                     } else {
+                       ''
+                     })
+                     output$tukeyLetters_flex <- renderUI(if (letters_needed) {
+                       {
+                         local_names %>%
+                           rename(!!(paste(
+                             combined_inputs$tukey_group, collapse = ":"
+                           )) := "group")
+                       } %>%
+                         mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%
+                         DT::datatable(
+                           filter = "top",
+                           selection = "multiple",
+                           escape = FALSE,
+                           style = 'auto',
+                           extensions = 'Buttons',
+                           options = list(
+                             searching = TRUE,
+                             fixedColumns = TRUE,
+                             autoWidth = TRUE,
+                             ordering = TRUE,
+                             dom = 'tBp',
+                             buttons = list((
+                               list(
+                                 extend = "excel",
+                                 text = "Download Full Results",
+                                 filename = 'letters',
+                                 exportOptions = list(modifier = list(page = "all"))
+                               )
+                             ))
+                           ),
+                           class = "display"
+                         ) %>%
+                         DT::renderDataTable(server = FALSE) %>%
+                         fluidPage()
+                     } else {
+                       ''
+                     })
+                     output$raw_flex <- renderUI({
+                       local_table
+                       local_table %>%
+                         mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%
+                         DT::datatable(
+                           filter = "top",
+                           selection = "multiple",
+                           escape = FALSE,
+                           style = 'auto',
+                           extensions = 'Buttons',
+                           options = list(
+                             searching = TRUE,
+                             fixedColumns = TRUE,
+                             autoWidth = TRUE,
+                             ordering = TRUE,
+                             dom = 'tBp',
+                             buttons = list((
+                               list(
+                                 extend = "excel",
+                                 text = "Download Full Results",
+                                 filename = 'raw',
+                                 exportOptions = list(modifier = list(page = "all"))
+                               )
+                             ))
+                           ),
+                           class = "display"
+                         ) %>%
+                         DT::renderDataTable(server = FALSE) %>%
+                         fluidPage()
+                     })
+                   }#anova-tukey-letters-output
 
-    initial_table() %>%
-      arrange(dbscan_cluster) %>%
-      group_by(v_t_r, dbscan_cluster) %>%
-      mutate(across(any_of(out_variables_d()), \(x) (median(x, na.rm = TRUE)))) %>%
-      ungroup() %>%
-      select(-timestamp) %>%
-      distinct() %>%
-      group_by(v_t_r) %>%
-      mutate(across(any_of(out_variables_d()), \(x) (x - lag(x)))) %>%
-      ungroup() %>%
-      group_by(cultivar) %>%
-      mutate(across(any_of(out_variables_d()), \(x) (x / x[treatment == 1]))) %>%
-      ungroup() %>%
-      mutate(across(where(is.numeric), ~ na_if(., Inf)), across(where(is.numeric), ~
-                                                                  na_if(., -Inf))) %>%
-      drop_na(out_variables_d())
-  } else {
-    initial_table()
-  })
+                   if (!combined_inputs$timeseries_plot){
+                     plot_d <- {
+                       local_table %>%
+                         ggplot(aes(
+                           x = as.POSIXct(timestamp_group, tz = 'UTC'),
+                           y = !!sym(combined_inputs$out_variables),
+                           color = letter,
+                           group = letter,
+                           fill = letter
+                         )) +
+                         geom_violin(
+                           na.rm = TRUE,
+                           width = 0.1,
+                           color = "black",
+                           alpha = 1,
+                           draw_quantiles = c(0.25, 0.5, 0.75),
+                           position = position_dodge(width = 0.8)
+                         ) +
+                         geom_jitter(
+                           height = 0,
+                           width = 0.1,
+                           color = "black",
+                           alpha = 0.3
+                         ) +
+                         geom_label(
+                           aes(
+                             label = letter,
+                             y = quantile(
+                               !!sym(combined_inputs$out_variables),
+                               probs = seq(0, 1, .05),
+                               na.rm = TRUE
+                             )['100%'] * 1.01
+                           ),
+                           color = 'black',
+                           fill = 'white',
+                           alpha = 0.5,
+                           size = 4,
+                           vjust = 1,
+                           position = position_dodge(width = 0.8)
+                         ) +
+                         labs(x = 'time',
+                              y = ifelse(
+                                combined_inputs$deltas,
+                                paste0('delta_', combined_inputs$out_variables),
+                                combined_inputs$out_variables
+                              )) +
+                         scale_x_datetime() +
+                         scale_fill_viridis(discrete = TRUE) +
+                         facet_grid(combined_inputs$facet_formula,
+                                    labeller = label_both,
+                                    scales = 'free_x') +
+                         theme_gray() +
+                         theme(
+                           text = element_text(size = 12),
+                           axis.text.x = element_blank(),
+                           axis.ticks.x = element_blank()
+                         )
+                     }
+                   } else {
+                     plot_d <- {
+                       local_table %>%
+                         ggplot(aes(
+                           x = as.POSIXct(timestamp_group, tz = 'UTC'),
+                           y = !!sym(combined_inputs$out_variables),
+                           color = !!sym(combined_inputs$gene_grouping),
+                           group = !!sym(combined_inputs$gene_grouping),
+                           fill = !!sym(combined_inputs$gene_grouping)
+                         )) +
+                         geom_point(
+                           na.rm = TRUE,
+                           width = 0.1,
+                           alpha = 1,
+                           draw_quantiles = c(0.25, 0.5, 0.75),
+                           position = position_dodge(width = 0.8)
+                         ) +
+                         geom_smooth() +
+                         geom_label(
+                           aes(
+                             label = letter,
+                             y = quantile(
+                               !!sym(combined_inputs$out_variables),
+                               probs = seq(0, 1, .05),
+                               na.rm = TRUE
+                             )['100%'] * 1.01
+                           ),
+                           color = 'black',
+                           fill = 'white',
+                           alpha = 0.2,
+                           size = 4,
+                           vjust = 1,
+                           position = position_dodge(width = 0.8)
+                         ) +
+                         labs(x = 'time',
+                              y = ifelse(
+                                combined_inputs$deltas,
+                                paste0('delta_', combined_inputs$out_variables),
+                                combined_inputs$out_variables
+                              )) +
+                         scale_x_datetime(date_minor_breaks = "3 days") +
+                         scale_fill_viridis(discrete = TRUE) +
+                         facet_grid(combined_inputs$facet_formula,
+                                    labeller = label_both,
+                                    scales = 'free_x') +
+                         theme_gray() +
+                         theme(
+                           text = element_text(size = 12)
+                         )
+                     }
+                   }
 
-  {
-    local_descriptive <- reactive({
-      current_table() %>%
-        filter(!is.na(!!sym(out_variables_d()))) %>%
-        arrange(!!sym(out_variables_d())) %>%
-        unite(group,
-              !!tukey_group_d(),
-              sep = ":",
-              remove = FALSE) %>%
-        select(group, !!out_variables_d()) %>%
-        group_by(group) %>%
-        summarise(
-          n = dplyr::n(),
-          median = median(!!rlang::sym(out_variables_d())),
-          mean = mean(!!rlang::sym(out_variables_d())),
-          cv_perc = 100 * sd(!!rlang::sym(out_variables_d())) / median(!!rlang::sym(out_variables_d())),
-          min = min(!!rlang::sym(out_variables_d())),
-          max = max(!!rlang::sym(out_variables_d())),
-          skewness = moments::skewness(!!rlang::sym(out_variables_d())),
-          kurtosis = moments::kurtosis(!!rlang::sym(out_variables_d())),
-        ) %>%
-        ungroup() %>%
-        arrange(mean)
-    })
-    local_anova <- reactive({
-      aov(as.formula(local_model_d()), data = current_table())
-    })
-    tukey_needed <- reactive({
-      as.formula(local_model_d()) %>%
-        all.vars() %>%
-        length() > 1
-    })
-    letters_needed <- reactive({
-      tukey_needed() &
-        length(vecsets::vsetdiff(sort(tukey_group_d()), sort(grouping_factors_d()))) == 0
-    })
-    local_tukey <- reactive(if (tukey_needed()) {
-      TukeyHSD(local_anova(), ordered = TRUE) %>%
-        purrr::modify_depth(5, \(x) replace_na(x, replace = 0), .ragged = TRUE)
-    } else {
-      NA
-    })
-    local_names <- reactive(if (letters_needed()) {
-      multcompLetters4(local_anova(), local_tukey()) %>%
-        .[[paste(sort(tukey_group_d()),
-                 sep = ':',
-                 collapse = ':')]] %>%
-        as.data.frame.list() %>%
-        as_tibble(rownames = 'group') %>%
-        select('group', 'Letters') %>%
-        rename(letter = Letters)
-    } else {
-      NA
-    })
-    local_table <- reactive(if (letters_needed()) {
-      current_table() %>%
-        filter(!is.na(!!out_variables_d())) %>%
-        left_join(local_names(), by = c('group' = 'group'))
-    } else {
-      current_table() %>%
-        mutate(letter = '-')
-    })
-  }#anova-tukey-letters-calc
+                   output$distPlot <- renderPlot(execOnResize = FALSE, {
+                     plot_d
+                   })
 
-  {
-    output$formula <- renderUI({
-      HTML(as.character(
-        div(style = "text-align: center; font-weight: bold;", local_model_d())
-      ))
-    })
-    output$descriptiveTable_flex <- renderUI({
-      local_descriptive()
-      local_descriptive()  %>%
-        mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%
-        DT::datatable(
-          filter = "top",
-          selection = "multiple",
-          escape = FALSE,
-          style = 'auto',
-          extensions = 'Buttons',
-          options = list(
-            searching = TRUE,
-            fixedColumns = TRUE,
-            autoWidth = TRUE,
-            ordering = TRUE,
-            dom = 'tBp',
-            buttons = list((
-              list(
-                extend = "excel",
-                text = "Download Full Results",
-                filename = 'descriptive',
-                exportOptions = list(modifier = list(page = "all"))
-              )
-            ))
-          ),
-          class = "display"
-        ) %>%
-        DT::renderDataTable(server = FALSE) %>%
-        fluidPage()
-    })
-    output$anovaTable_flex <- renderUI({
-      local_anova()
-      tidy(local_anova()) %>%
-        mutate(
-          sig = case_when(
-            p.value <= 0.001 ~ "***",
-            p.value <= 0.01 ~ "**",
-            p.value <= 0.05 ~ "*",
-            p.value <= 0.1 ~ ".",
-            .default = ""
-          )
-        )  %>%
-        mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%
-        DT::datatable(
-          filter = "top",
-          selection = "multiple",
-          escape = FALSE,
-          style = 'auto',
-          extensions = 'Buttons',
-          options = list(
-            searching = TRUE,
-            fixedColumns = TRUE,
-            autoWidth = TRUE,
-            ordering = TRUE,
-            dom = 'tBp',
-            buttons = list((
-              list(
-                extend = "excel",
-                text = "Download Full Results",
-                filename = 'anova',
-                exportOptions = list(modifier = list(page = "all"))
-              )
-            ))
-          ),
-          class = "display"
-        ) %>%
-        DT::renderDataTable(server = FALSE) %>%
-        fluidPage()
-    })
-    output$tukeyTable_flex <- renderUI(if (tukey_needed()) {
-      tidy(local_tukey()) %>%
-        select(-null.value) %>%
-        mutate(
-          sig = case_when(
-            adj.p.value <= 0.001 ~ "***",
-            adj.p.value <= 0.01 ~ "**",
-            adj.p.value <= 0.05 ~ "*",
-            adj.p.value <= 0.1 ~ ".",
-            .default = ""
-          ),
-          across(where(is.numeric), \(x) round(x, digits = 2))
-        ) %>%
-        DT::datatable(
-          filter = "top",
-          selection = "multiple",
-          escape = FALSE,
-          style = 'auto',
-          extensions = 'Buttons',
-          options = list(
-            searching = TRUE,
-            fixedColumns = TRUE,
-            autoWidth = TRUE,
-            ordering = TRUE,
-            dom = 'tBp',
-            buttons = list((
-              list(
-                extend = "excel",
-                text = "Download Full Results",
-                filename = 'tukey',
-                exportOptions = list(modifier = list(page = "all"))
-              )
-            ))
-          ),
-          class = "display"
-        ) %>%
-        DT::renderDataTable(server = FALSE) %>%
-        fluidPage()
-    } else {
-      ''
-    })
-    output$tukeyLetters_flex <- renderUI(if (letters_needed()) {
-      {
-        local_names() %>%
-          rename(!!(paste(tukey_group_d(), collapse = ":")) := "group")
-      } %>%
-        mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%
-        DT::datatable(
-          filter = "top",
-          selection = "multiple",
-          escape = FALSE,
-          style = 'auto',
-          extensions = 'Buttons',
-          options = list(
-            searching = TRUE,
-            fixedColumns = TRUE,
-            autoWidth = TRUE,
-            ordering = TRUE,
-            dom = 'tBp',
-            buttons = list((
-              list(
-                extend = "excel",
-                text = "Download Full Results",
-                filename = 'letters',
-                exportOptions = list(modifier = list(page = "all"))
-              )
-            ))
-          ),
-          class = "display"
-        ) %>%
-        DT::renderDataTable(server = FALSE) %>%
-        fluidPage()
-    } else {
-      ''
-    })
-    output$raw_flex <- renderUI({
-      local_table()
-      local_table() %>%
-        mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%
-        DT::datatable(
-          filter = "top",
-          selection = "multiple",
-          escape = FALSE,
-          style = 'auto',
-          extensions = 'Buttons',
-          options = list(
-            searching = TRUE,
-            fixedColumns = TRUE,
-            autoWidth = TRUE,
-            ordering = TRUE,
-            dom = 'tBp',
-            buttons = list((
-              list(
-                extend = "excel",
-                text = "Download Full Results",
-                filename = 'raw',
-                exportOptions = list(modifier = list(page = "all"))
-              )
-            ))
-          ),
-          class = "display"
-        ) %>%
-        DT::renderDataTable(server = FALSE) %>%
-        fluidPage()
-    })
-  }#anova-tukey-letters-output
+                   output$savePlot <- downloadHandler(
+                     filename = function() {
+                       "plot.svg"
+                     },
+                     content = function(file) {
+                       plot <- plot_d
+                       local_model <- local_model_d
+                       ggsave(
+                         file,
+                         plot + ggtitle(local_model),
+                         device = "svg",
+                         width = 16,
+                         height = 9
+                       )
+                     }
+                   )
+                 }
 
-  facet_formula_d <-
-    reactive(as.formula(input$facet_formula)) %>% debounce(3000)
-
-  plot_d <- reactive(
-    local_table() %>%
-      ggplot(
-        aes(
-          x = as.POSIXct(timestamp_group, tz = 'UTC'),
-          y = !!sym(out_variables_d()),
-          color = letter,
-          group = letter,
-          fill = letter
-        )
-      ) +
-      geom_violin(
-        na.rm = TRUE,
-        width = 0.1,
-        color = "black",
-        alpha = 1,
-        draw_quantiles = c(0.25, 0.5, 0.75),
-        position = position_dodge(width = 0.8)
-      ) +
-      geom_jitter(
-        height = 0,
-        width = 0.1,
-        color = "black",
-        alpha = 0.3
-      ) +
-      geom_label(
-        aes(
-          label = letter,
-          y = quantile(
-            !!sym(out_variables_d()),
-            probs = seq(0, 1, .05),
-            na.rm = TRUE
-          )['100%'] * 1.01
-        ),
-        color = 'black',
-        fill = 'white',
-        alpha = 0.5,
-        size = 4,
-        vjust = 1,
-        position = position_dodge(width = 0.8)
-      ) +
-      labs(
-        x = 'time',
-        y = ifelse(
-          input$deltas,
-          paste0('delta_', out_variables_d()),
-          out_variables_d()
-        )
-      ) +
-      scale_x_datetime() +
-      scale_fill_viridis(discrete = TRUE) +
-      facet_grid(
-        facet_formula_d(),
-        labeller = label_both,
-        scales = 'free_x'
-      ) +
-      theme_gray() +
-      theme(
-        text = element_text(size = 12),
-        axis.text.x = element_blank(),
-        axis.ticks.x = element_blank()
-      )
-  )
-
-  output$distPlot <- renderPlot(execOnResize = FALSE, {
-    plot_d()
-  })
-
-  output$savePlot <- downloadHandler(
-    filename = function() {
-      "plot.svg"
-    },
-    content = function(file) {
-      plot <- plot_d()
-      local_model <- local_model_d()
-      ggsave(file, plot + ggtitle(local_model),
-             device = "svg",
-             width = 16,
-             height = 9)
-    }
-  )
+               },
+               ignoreInit = FALSE, priority=10)
 }
 
 # Run the application
