@@ -91,7 +91,6 @@ ui <- fluidPage(# Application title
         'tukey_group',
         'Tukey group:',
         grouping_factors[grouping_factors != "timestamp_group"],
-        ,
         multiple = TRUE,
         selected = c('treatment', 'dbscan_clusters')
       ),
@@ -165,31 +164,36 @@ ui <- fluidPage(# Application title
           "Raw Table",
           uiOutput("RAW"),
           verbatimTextOutput("raw"),
-          fluidRow(uiOutput("raw_flex"))
+          DT::DTOutput("raw_flex"),
+          downloadButton("raw_flex_downloadData", "Download Full Results")
         ),
         tabPanel(
           "Descriptive",
           uiOutput("DESCvarNames"),
           verbatimTextOutput("DescriptiveTable"),
-          fluidRow(uiOutput("descriptiveTable_flex"))
+          DT::DTOutput("descriptiveTable_flex"),
+          downloadButton("descriptiveTable_flex_downloadData", "Download Full Results")
         ),
         tabPanel(
           "ANOVA",
           uiOutput("ANOVAvarNames"),
           verbatimTextOutput("anovaTable"),
-          fluidRow(uiOutput("anovaTable_flex"))
+          DT::DTOutput("anovaTable_flex"),
+          downloadButton("anovaTable_flex_downloadData", "Download Full Results")
         ),
         tabPanel(
           "Tukey",
           uiOutput("TUKEYvarNames"),
           verbatimTextOutput("tukeyTable"),
-          fluidRow(uiOutput("tukeyTable_flex"))
+          DT::DTOutput("tukeyTable_flex"),
+          downloadButton("tukeyTable_flex_downloadData", "Download Full Results")
         ),
         tabPanel(
           "Group Letters",
           uiOutput("TUKEYLvarNames"),
           verbatimTextOutput("tukeyLetters"),
-          fluidRow(uiOutput("tukeyLetters_flex"))
+          DT::DTOutput("tukeyLetters_flex"),
+          downloadButton("tukeyLetters_flex_downloadData", "Download Full Results")
         )
       )
     )
@@ -320,7 +324,7 @@ server <- function(input, output, session) {
       combined_inputs$tukey_group
     ),
     {
-      {
+        {
         local_model_d <- {
           formulate(combined_inputs$out_variables,
                     combined_inputs$grouping_factors)
@@ -341,7 +345,7 @@ server <- function(input, output, session) {
               }
             }
         }
-        logger::log_info(paste0('most_interactive:', most_interactive))
+        logger::log_info(paste0('most_interactive:', paste0(most_interactive, collapse = ', ')))
 
         initial_table <- {
           merged_table %>%
@@ -369,6 +373,7 @@ server <- function(input, output, session) {
             select(-c(where(is.numeric), -!!combined_inputs$out_variables))
         }
         logger::log_info(paste0('length_initial_table:', nrow(initial_table)))
+        }#fast parse
 
         {
           local_descriptive <- {
@@ -440,12 +445,15 @@ server <- function(input, output, session) {
                 sort(combined_inputs$grouping_factors)
               )) == 0
           }
+          logger::log_info(paste0('letters_needed:', letters_needed))
+
           local_tukey <- if (tukey_needed) {
             TukeyHSD(local_anova, ordered = TRUE) %>%
-              purrr::modify_depth(5, \(x) replace_na(x, replace = 0), .ragged = TRUE)
+              purrr::modify_depth(5, ~ replace_na(.x, replace = 0), .ragged = TRUE)
           } else {
-            NA
+            NULL
           }
+
           local_names <- if (letters_needed) {
             multcompLetters4(local_anova, local_tukey) %>%
               .[[paste(sort(combined_inputs$tukey_group),
@@ -456,8 +464,9 @@ server <- function(input, output, session) {
               select('group', 'Letters') %>%
               rename(letter = Letters)
           } else {
-            NA
+            NULL
           }
+
           local_table <- if (letters_needed) {
             initial_table %>%
               filter(!is.na(!!combined_inputs$out_variables)) %>%
@@ -466,6 +475,7 @@ server <- function(input, output, session) {
             initial_table %>%
               mutate(letter = '-')
           }
+          logger::log_info(paste0('local_table:', nrow(local_table)))
         }#anova-tukey-letters-calc
 
         {
@@ -474,128 +484,179 @@ server <- function(input, output, session) {
               div(style = "text-align: center; font-weight: bold;", local_model_d)
             ))
           })
-          output$descriptiveTable_flex <- renderUI({
-            local_descriptive %>%
-              mutate(across(where(is.numeric), ~ round(., digits = 2))) %>%
-              DT::renderDT(
-                options = list(
-                  server = TRUE,
-                  filter = "top",
-                  selection = "multiple",
-                  searching = TRUE,
-                  fixedColumns = TRUE,
-                  autoWidth = TRUE,
-                  ordering = TRUE,
-                  dom = 'tBp',
-                  buttons = list(
-                    'excel', 'csv',
-                    list(
-                      extend = "excel",
-                      text = "Download Full Results",
-                      filename = 'descriptive',
-                      exportOptions = list(
-                        columns = ':visible',
-                        modifier = list(page = "all")
-                      )
-                    )
-                  )
-                )
-              )
-          })
-          output$anovaTable_flex <- renderUI({
-            local_anova <- tidy(local_anova)
 
-            local_anova %>%
+          render_local_table <- local_table %>%
+            mutate(across(where(is.numeric), \(x) round(x, digits = 2)))
+
+          output$raw_flex <- DT::renderDT(
+            DT::datatable(
+              render_local_table,
+              options = list(
+                server = TRUE,
+                filter = "top",
+                selection = "multiple",
+                searching = TRUE,
+                fixedColumns = TRUE,
+                autoWidth = TRUE,
+                ordering = TRUE,
+                dom = 'tBp',
+                buttons = list(
+                  'excel', 'csv')
+              ),
+              class = "display",
+              extensions = 'Buttons'
+            ),
+            server = TRUE
+          )
+
+
+        output$raw_flex_downloadData <- downloadHandler(
+          filename = function() {
+            paste("Raw_", Sys.Date(), ".xlsx", sep = "")
+          },
+          content = function(file) {
+            # Write the full dataset to an Excel file
+            writexl::write_xlsx(render_local_table, file)
+          }
+        )
+
+        render_descriptive <- local_descriptive %>%
+          mutate(across(where(is.numeric), ~ round(., digits = 2)))
+
+        output$descriptiveTable_flex <- DT::renderDT(
+          DT::datatable(
+            render_descriptive,
+            options = list(
+              server = TRUE,
+              filter = "top",
+              selection = "multiple",
+              searching = TRUE,
+              fixedColumns = TRUE,
+              autoWidth = TRUE,
+              ordering = TRUE,
+              dom = 'tBp',
+              buttons = list(
+                'excel', 'csv')
+            ),
+            class = "display",
+            extensions = 'Buttons'
+          ),
+          server = TRUE
+        )
+
+        output$descriptiveTable_flex_downloadData <- downloadHandler(
+          filename = function() {
+            paste("Descriptive_", Sys.Date(), ".xlsx", sep = "")
+          },
+          content = function(file) {
+            # Write the full dataset to an Excel file
+            writexl::write_xlsx(render_descriptive, file)
+          }
+        )
+
+        render_local_anova <- local_anova %>% tidy() %>%
+          mutate(
+            sig = case_when(
+              p.value <= 0.001 ~ "***",
+              p.value <= 0.01 ~ "**",
+              p.value <= 0.05 ~ "*",
+              p.value <= 0.1 ~ ".",
+              TRUE ~ ""
+            )
+          ) %>%
+          mutate(across(where(is.numeric), ~ round(., digits = 2)))
+
+          output$anovaTable_flex <- {DT::renderDT(
+            DT::datatable(
+              render_local_anova,
+              options = list(
+                server = TRUE,
+                filter = "top",
+                selection = "multiple",
+                searching = TRUE,
+                fixedColumns = TRUE,
+                autoWidth = TRUE,
+                ordering = TRUE,
+                dom = 'tBp',
+                buttons = list(
+                  'excel', 'csv')
+              ),
+              class = "display",
+              extensions = 'Buttons'
+            ),
+            server = TRUE
+          )}
+
+          output$anovaTable_flex_downloadData <- downloadHandler(
+            filename = function() {
+              paste("ANOVA_", Sys.Date(), ".xlsx", sep = "")
+            },
+            content = function(file) {
+              # Write the full dataset to an Excel file
+              writexl::write_xlsx(render_local_anova, file)
+            }
+          )
+
+          render_local_tukey <-  if (tukey_needed) {
+            local_tukey %>% tidy() %>%
+              select(-null.value) %>%
               mutate(
                 sig = case_when(
-                  p.value <= 0.001 ~ "***",
-                  p.value <= 0.01 ~ "**",
-                  p.value <= 0.05 ~ "*",
-                  p.value <= 0.1 ~ ".",
+                  adj.p.value <= 0.001 ~ "***",
+                  adj.p.value <= 0.01 ~ "**",
+                  adj.p.value <= 0.05 ~ "*",
+                  adj.p.value <= 0.1 ~ ".",
                   TRUE ~ ""
-                )
-              ) %>%
-              mutate(across(where(is.numeric), ~ round(., digits = 2))) %>%
-              DT::renderDT(
-                options = list(
-                  server = TRUE,
-                  filter = "top",
-                  selection = "multiple",
-                  searching = TRUE,
-                  fixedColumns = TRUE,
-                  autoWidth = TRUE,
-                  ordering = TRUE,
-                  dom = 'tBp',
-                  buttons = list(
-                    'excel', 'csv',
-                    list(
-                      extend = "excel",
-                      text = "Download Full Results",
-                      filename = 'anova',
-                      exportOptions = list(
-                        columns = ':visible',
-                        modifier = list(page = "all")
-                      )
-                    )
-                  )
-                ),
-                class = "display"
-              )
-          })
-          output$tukeyTable_flex <- renderUI({
-            if (tukey_needed) {
-              local_tukey <- tidy(local_tukey) %>%
-                select(-null.value) %>%
-                mutate(
-                  sig = case_when(
-                    adj.p.value <= 0.001 ~ "***",
-                    adj.p.value <= 0.01 ~ "**",
-                    adj.p.value <= 0.05 ~ "*",
-                    adj.p.value <= 0.1 ~ ".",
-                    TRUE ~ ""
-                  )
-                ) %>%
-                mutate(across(where(is.numeric), ~ round(., digits = 2)))
-
-              local_tukey %>%
-                DT::renderDT(
-                  options = list(
-                    server = TRUE,
-                    filter = "top",
-                    selection = "multiple",
-                    searching = TRUE,
-                    fixedColumns = TRUE,
-                    autoWidth = TRUE,
-                    ordering = TRUE,
-                    dom = 'tBp',
-                    buttons = list(
-                      'excel',
-                      'csv',
-                      list(
-                        extend = "excel",
-                        text = "Download Full Results",
-                        filename = 'tukey',
-                        exportOptions = list(columns = ':visible', modifier = list(page = "all"))
-                      )
-                    )
-                  ),
-                  class = "display"
-                )
-                       } else {
-                         ''
-                       }
-            })
+                )) %>%
+              mutate(across(where(is.numeric), ~ round(., digits = 2)))} else {
+                tibble::tibble()
+              }
+          output$tukeyTable_flex <- {
+            DT::renderDT(
+            DT::datatable(
+              render_local_tukey,
+              options = list(
+                server = TRUE,
+                filter = "top",
+                selection = "multiple",
+                searching = TRUE,
+                fixedColumns = TRUE,
+                autoWidth = TRUE,
+                ordering = TRUE,
+                dom = 'tBp',
+                buttons = list(
+                  'excel', 'csv')
+              ),
+              class = "display",
+              extensions = 'Buttons'
+            ),
+            server = TRUE
+          )
+          }
+          output$tukeyTable_flex_downloadData <- downloadHandler(
+            filename = function() {
+              paste("Tukey_", Sys.Date(), ".xlsx", sep = "")
+            },
+            content = function(file) {
+              # Write the full dataset to an Excel file
+              writexl::write_xlsx(render_local_tukey, file)
+            }
+          )
 
 
-          output$tukeyLetters_flex <- renderUI(if (letters_needed) {
-            {
+
+          render_local_letters <-  if (letters_needed) {
               local_names %>%
                 rename(!!(
                   paste(combined_inputs$tukey_group, collapse = ":")
                 ) := "group")
-            } %>%
-              mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%
-              DT::renderDT(
+            } else {
+                tibble::tibble()
+            }
+          output$tukeyLetters_flex  <- {
+            DT::renderDT(
+              DT::datatable(
+                render_local_letters,
                 options = list(
                   server = TRUE,
                   filter = "top",
@@ -606,54 +667,25 @@ server <- function(input, output, session) {
                   ordering = TRUE,
                   dom = 'tBp',
                   buttons = list(
-                    'excel', 'csv',
-                    list(
-                      extend = "excel",
-                      text = "Download Full Results",
-                      filename = 'letters',
-                      exportOptions = list(
-                        columns = ':visible',
-                        modifier = list(page = "all")
-                      )
-                    )
-                  )
+                    'excel', 'csv')
                 ),
-                class = "display"
-              )
-          } else {
-            ''
-          })
-          output$raw_flex <- renderUI({
-            local_table
-            local_table %>%
-              mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%
-              DT::renderDT(
-                options = list(
-                  server = TRUE,
-                  filter = "top",
-                  selection = "multiple",
-                  searching = TRUE,
-                  fixedColumns = TRUE,
-                  autoWidth = TRUE,
-                  ordering = TRUE,
-                  dom = 'tBp',
-                  buttons = list(
-                    'excel', 'csv',
-                    list(
-                      extend = "excel",
-                      text = "Download Full Results",
-                      filename = 'anova',
-                      exportOptions = list(
-                        columns = ':visible',
-                        modifier = list(page = "all")
-                      )
-                    )
-                  )
-                ),
-                class = "display"
-              )
-          })
-        }#anova-tukey-letters-output
+                class = "display",
+                extensions = 'Buttons'
+              ),
+              server = TRUE
+            )
+          }
+          output$tukeyLetters_flex_downloadData <- downloadHandler(
+            filename = function() {
+              paste("Letters_", Sys.Date(), ".xlsx", sep = "")
+            },
+            content = function(file) {
+              # Write the full dataset to an Excel file
+              writexl::write_xlsx(render_local_letters, file)
+            }
+          )
+
+
 
         if (!combined_inputs$timeseries_plot) {
           set.seed(42)
@@ -680,7 +712,7 @@ server <- function(input, output, session) {
                   geom_jitter(
                     data = local_table %>%
                       {
-                        if (most_interactive %in% colnames(.)){
+                        if (all(most_interactive %in% colnames(.))){
                           . %>% group_by_at(most_interactive) %>%
                             slice_sample(n = 5) %>%
                             ungroup()
@@ -754,7 +786,7 @@ server <- function(input, output, session) {
                     geom_point(
                       data = local_table %>%
                         {
-                          if (most_interactive %in% colnames(.)){
+                          if (all(most_interactive %in% colnames(.))){
                             . %>% group_by_at(most_interactive) %>%
                               slice_sample(n = 5) %>%
                               ungroup()
@@ -775,7 +807,7 @@ server <- function(input, output, session) {
                     geom_smooth(
                       data = local_table %>%
                         {
-                          if (most_interactive %in% colnames(.)){
+                          if (all(most_interactive %in% colnames(.))){
                             . %>% group_by_at(most_interactive) %>%
                               slice_sample(n = 5) %>%
                               ungroup()
@@ -850,7 +882,7 @@ server <- function(input, output, session) {
             )
           }
         )
-      }
+      }#anova-tukey-letters-output
 
     },
     ignoreInit = FALSE,
