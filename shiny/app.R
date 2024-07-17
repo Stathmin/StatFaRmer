@@ -19,7 +19,7 @@ formulate <- function(RHS, LHF) {
   } else if ((length(LHF) == 1)) {
     LHS = str_interp('1 + ${LHF}')
   } else {
-    LHS = str_interp('1 + (${paste(LHF, collapse=" + ")})^3')
+    LHS = str_interp('1 + (${paste(LHF, collapse=" + ")})^2')
   }
   return(paste(RHS, LHS, sep = " ~ "))
 }
@@ -147,15 +147,14 @@ ui <- fluidPage(# Application title
       ),
       textInput(
         'facet_formula',
-        'Facet formula',
+        'Facet formula:',
         value = 'treatment ~ timestamp_group',
         placeholder = 'treatment ~ timestamp_group'
       ),
-      checkboxInput('deltas', ': use deltas', FALSE),
-      checkboxInput('timeseries_plot', ': plot series', FALSE),
+      checkboxInput('timeseries_plot', ': plot timeseries with GAM', FALSE),
 
-      downloadButton("savePlot", "Save Plot as SVG"),
-      actionButton("submit", "Submit")
+      actionButton("submit", "Submit"),
+      downloadButton("savePlot", "Save Plot as SVG")
     ),
 
     mainPanel(
@@ -215,8 +214,7 @@ server <- function(input, output, session) {
       facet_formula = isolate(as.formula(input$facet_formula)),
       grouping_factors = isolate(sort(input$grouping_factors)),
       tukey_group = isolate(sort(input$tukey_group)),
-      timeseries_plot = isolate(input$timeseries_plot),
-      deltas = isolate(input$deltas)
+      timeseries_plot = isolate(input$timeseries_plot)
     )
   })
 
@@ -233,7 +231,6 @@ server <- function(input, output, session) {
     combined_inputs$grouping_factors <- initial_combined_inputs$grouping_factors
     combined_inputs$tukey_group <- initial_combined_inputs$tukey_group
     combined_inputs$timeseries_plot <- initial_combined_inputs$timeseries_plot
-    combined_inputs$deltas <- initial_combined_inputs$deltas
   }, priority = 50)
 
   observeEvent(input$submit, {
@@ -247,16 +244,14 @@ server <- function(input, output, session) {
     combined_inputs$grouping_factors = isolate(sort(input$grouping_factors))
     combined_inputs$tukey_group = isolate(sort(input$tukey_group))
     combined_inputs$timeseries_plot = isolate(input$timeseries_plot)
-    combined_inputs$deltas = isolate(input$deltas)
   }, priority = 50)
 
   observeEvent(input$gene_grouping,
                {
-
                  {
                    unique_groups <- get_unique(merged_table, input$gene_grouping)
 
-                   if(!setequal(unique_groups, input$gene_groups)) {
+                   if (!setequal(unique_groups, input$gene_groups)) {
                      isolate(
                        updateSelectizeInput(
                          session,
@@ -276,475 +271,591 @@ server <- function(input, output, session) {
                    }
                  }
                },
-               ignoreInit = FALSE, priority=100)
+               ignoreInit = FALSE,
+               priority = 100)
 
-  observeEvent(c(input$gene_groups, input$gene_grouping),
-               {
-                 {
-                   unique_cultivars <- merged_table %>%
-                     filter(!!sym(input$gene_grouping) %in% input$gene_groups) %>%
-                     select('cultivar') %>%
-                     distinct() %>%
-                     arrange() %>%
-                     pull()
+  observeEvent(
+    c(input$gene_groups, input$gene_grouping),
+    {
+      {
+        unique_cultivars <- merged_table %>%
+          filter(!!sym(input$gene_grouping) %in% input$gene_groups) %>%
+          select('cultivar') %>%
+          distinct() %>%
+          arrange() %>%
+          pull()
 
-                   if(!setequal(unique_cultivars, input$cultivars)) {
-                     isolate(
-                       updateSelectizeInput(
-                         session,
-                         'cultivars',
-                         choices = c(),
-                         selected = c(),
-                         server = TRUE
-                       )
-                     )
-                     updateSelectizeInput(
-                       session,
-                       'cultivars',
-                       choices = unique_cultivars,
-                       selected = unique_cultivars,
-                       server = TRUE
-                     )
-                   }
-                 }
-               },
-               ignoreInit = FALSE, priority=75)
+        if (!setequal(unique_cultivars, input$cultivars)) {
+          isolate(
+            updateSelectizeInput(
+              session,
+              'cultivars',
+              choices = c(),
+              selected = c(),
+              server = TRUE
+            )
+          )
+          updateSelectizeInput(
+            session,
+            'cultivars',
+            choices = unique_cultivars,
+            selected = unique_cultivars,
+            server = TRUE
+          )
+        }
+      }
+    },
+    ignoreInit = FALSE,
+    priority = 75
+  )
 
-  observeEvent(c(combined_inputs$treatments, combined_inputs$cultivars,
-                 combined_inputs$timestamp_groups, combined_inputs$out_variables,
-                 combined_inputs$facet_formula, combined_inputs$grouping_factors,
-                 combined_inputs$tukey_group, combined_inputs$deltas),
-               {
+  observeEvent(
+    c(
+      combined_inputs$treatments,
+      combined_inputs$cultivars,
+      combined_inputs$timestamp_groups,
+      combined_inputs$out_variables,
+      combined_inputs$facet_formula,
+      combined_inputs$grouping_factors,
+      combined_inputs$tukey_group
+    ),
+    {
+      {
+        local_model_d <- {
+          formulate(combined_inputs$out_variables,
+                    combined_inputs$grouping_factors)
+        }
+        logger::log_info(paste0('local_model_d:', local_model_d))
 
-                 {
-                   local_model_d <- {
-                     formulate(combined_inputs$out_variables, combined_inputs$grouping_factors)
-                   }
+        most_interactive <- {
+          as.formula(local_model_d) %>%
+            terms() %>%
+            labels() %>%
+            {
+              if (length(.) == 0) {
+                FALSE
+              } else {
+                .[str_count(., ':') == max(str_count(., ':'))][1] %>%
+                  str_split_1(':') %>%
+                  unlist()
+              }
+            }
+        }
+        logger::log_info(paste0('most_interactive:', most_interactive))
 
-                   initial_table <- {
-                     merged_table %>%
-                       filter(
-                         treatment %in% combined_inputs$treatments,
-                         cultivar %in% combined_inputs$cultivars,
-                         as.character(timestamp_group) %in% as.character(combined_inputs$timestamp_groups),
-                         !!sym(combined_inputs$gene_grouping) %in% combined_inputs$gene_groups
-                       ) %>%
-                       arrange(timestamp_group) %>%
-                       mutate(timestamp_group = as.factor(timestamp_group)) %>%
-                       unite(group,
-                             !!sort(combined_inputs$tukey_group),
-                             sep = ":",
-                             remove = FALSE) %>%
-                       select(-c(where(is.numeric), -!!combined_inputs$out_variables))
-                   }
-                   current_table <- if (combined_inputs$deltas) {
-                     initial_table %>%
-                       arrange(dbscan_cluster) %>%
-                       group_by(v_t_r, dbscan_cluster) %>%
-                       mutate(across(any_of(combined_inputs$out_variables), \(x) (median(x, na.rm = TRUE)))) %>%
-                       ungroup() %>%
-                       select(-timestamp) %>%
-                       distinct() %>%
-                       group_by(v_t_r) %>%
-                       mutate(across(any_of(combined_inputs$out_variables), \(x) (x - lag(x)))) %>%
-                       ungroup() %>%
-                       group_by(cultivar) %>%
-                       mutate(across(any_of(combined_inputs$out_variables), \(x) (x / x[treatment == 1]))) %>%
-                       ungroup() %>%
-                       mutate(across(where(is.numeric), ~ na_if(., Inf)), across(where(is.numeric), ~
-                                                                                   na_if(., -Inf))) %>%
-                       drop_na(combined_inputs$out_variables)
-                   } else {
-                     initial_table
-                   }
+        initial_table <- {
+          merged_table %>%
+            filter(
+              treatment %in% combined_inputs$treatments,
+              cultivar %in% combined_inputs$cultivars,
+              as.character(timestamp_group) %in% as.character(combined_inputs$timestamp_groups),
+              !!sym(combined_inputs$gene_grouping) %in% combined_inputs$gene_groups
+            ) %>%
+            arrange(timestamp_group) %>%
+            mutate(timestamp_group = as.factor(timestamp_group)) %>%
+            {
+              if (!is.null(combined_inputs$tukey_group)) {
+                unite(
+                  data = .,
+                  col = group,
+                  !!(sort(combined_inputs$tukey_group)),
+                  sep = ":",
+                  remove = FALSE
+                )
+              } else {
+                mutate(., group = 'all')
+              }
+            } %>%
+            select(-c(where(is.numeric), -!!combined_inputs$out_variables))
+        }
+        logger::log_info(paste0('length_initial_table:', nrow(initial_table)))
 
-                   {
-                     local_descriptive <- {
-                       current_table %>%
-                         filter(!is.na(!!sym(combined_inputs$out_variables))) %>%
-                         arrange(!!sym(combined_inputs$out_variables)) %>%
-                         unite(group,
-                               !!combined_inputs$tukey_group,
-                               sep = ":",
-                               remove = FALSE) %>%
-                         select(group, !!combined_inputs$out_variables) %>%
-                         group_by(group) %>%
-                         summarise(
-                           n = dplyr::n(),
-                           median = median(!!rlang::sym(combined_inputs$out_variables)),
-                           mean = mean(!!rlang::sym(combined_inputs$out_variables)),
-                           cv_perc = 100 * sd(!!rlang::sym(combined_inputs$out_variables)) / median(!!rlang::sym(combined_inputs$out_variables)),
-                           min = min(!!rlang::sym(combined_inputs$out_variables)),
-                           max = max(!!rlang::sym(combined_inputs$out_variables)),
-                           skewness = moments::skewness(!!rlang::sym(combined_inputs$out_variables)),
-                           kurtosis = moments::kurtosis(!!rlang::sym(combined_inputs$out_variables)),
-                         ) %>%
-                         ungroup() %>%
-                         arrange(mean)
-                     }
-                     local_anova <- {
-                       aov(as.formula(local_model_d), data = current_table)
-                     }
-                     tukey_needed <- {
-                       as.formula(local_model_d) %>%
-                         all.vars() %>%
-                         length() > 1
-                     }
-                     letters_needed <- {
-                       tukey_needed &
-                         length(vecsets::vsetdiff(
-                           sort(combined_inputs$tukey_group),
-                           sort(combined_inputs$grouping_factors)
-                         )) == 0
-                     }
-                     local_tukey <- if (tukey_needed) {
-                       TukeyHSD(local_anova, ordered = TRUE) %>%
-                         purrr::modify_depth(5, \(x) replace_na(x, replace = 0), .ragged = TRUE)
-                     } else {
-                       NA
-                     }
-                     local_names <- if (letters_needed) {
-                       multcompLetters4(local_anova, local_tukey) %>%
-                         .[[paste(sort(combined_inputs$tukey_group),
-                                  sep = ':',
-                                  collapse = ':')]] %>%
-                         as.data.frame.list() %>%
-                         as_tibble(rownames = 'group') %>%
-                         select('group', 'Letters') %>%
-                         rename(letter = Letters)
-                     } else {
-                       NA
-                     }
-                     local_table <- if (letters_needed) {
-                       current_table %>%
-                         filter(!is.na(!!combined_inputs$out_variables)) %>%
-                         left_join(local_names, by = c('group' = 'group'))
-                     } else {
-                       current_table %>%
-                         mutate(letter = '-')
-                     }
-                   }#anova-tukey-letters-calc
+        {
+          local_descriptive <- {
+            initial_table %>%
+              filter(!is.na(!!sym(
+                combined_inputs$out_variables
+              ))) %>%
+              arrange(!!sym(combined_inputs$out_variables)) %>%
+              {
+                if (!is.null(combined_inputs$tukey_group)) {
+                  unite(
+                    data = .,
+                    col = group,
+                    !!(sort(combined_inputs$tukey_group)),
+                    sep = ":",
+                    remove = FALSE
+                  )
+                } else {
+                  mutate(., group = 'all')
+                }
+              } %>%
+              select(group, !!combined_inputs$out_variables) %>%
+              group_by(group) %>%
+              summarise(
+                n = dplyr::n(),
+                median = median(!!rlang::sym(
+                  combined_inputs$out_variables
+                )),
+                mean = mean(!!rlang::sym(
+                  combined_inputs$out_variables
+                )),
+                cv_perc = 100 * sd(!!rlang::sym(
+                  combined_inputs$out_variables
+                )) / median(!!rlang::sym(
+                  combined_inputs$out_variables
+                )),
+                min = min(!!rlang::sym(
+                  combined_inputs$out_variables
+                )),
+                max = max(!!rlang::sym(
+                  combined_inputs$out_variables
+                )),
+                skewness = moments::skewness(!!rlang::sym(
+                  combined_inputs$out_variables
+                )),
+                kurtosis = moments::kurtosis(!!rlang::sym(
+                  combined_inputs$out_variables
+                )),
+              ) %>%
+              ungroup() %>%
+              arrange(mean)
+          }
+          logger::log_info(paste0('length_local_descriptive:', nrow(local_descriptive)))
 
-                   {
-                     output$formula <- renderUI({
-                       HTML(as.character(
-                         div(style = "text-align: center; font-weight: bold;", local_model_d)
-                       ))
-                     })
-                     output$descriptiveTable_flex <- renderUI({
-                       local_descriptive
-                       local_descriptive  %>%
-                         mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%
-                         DT::datatable(
-                           filter = "top",
-                           selection = "multiple",
-                           escape = FALSE,
-                           style = 'auto',
-                           extensions = 'Buttons',
-                           options = list(
-                             searching = TRUE,
-                             fixedColumns = TRUE,
-                             autoWidth = TRUE,
-                             ordering = TRUE,
-                             dom = 'tBp',
-                             buttons = list((
-                               list(
-                                 extend = "excel",
-                                 text = "Download Full Results",
-                                 filename = 'descriptive',
-                                 exportOptions = list(modifier = list(page = "all"))
-                               )
-                             ))
-                           ),
-                           class = "display"
-                         ) %>%
-                         DT::renderDataTable(server = FALSE) %>%
-                         fluidPage()
-                     })
-                     output$anovaTable_flex <- renderUI({
-                       local_anova
-                       tidy(local_anova) %>%
-                         mutate(
-                           sig = case_when(
-                             p.value <= 0.001 ~ "***",
-                             p.value <= 0.01 ~ "**",
-                             p.value <= 0.05 ~ "*",
-                             p.value <= 0.1 ~ ".",
-                             .default = ""
-                           )
-                         )  %>%
-                         mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%
-                         DT::datatable(
-                           filter = "top",
-                           selection = "multiple",
-                           escape = FALSE,
-                           style = 'auto',
-                           extensions = 'Buttons',
-                           options = list(
-                             searching = TRUE,
-                             fixedColumns = TRUE,
-                             autoWidth = TRUE,
-                             ordering = TRUE,
-                             dom = 'tBp',
-                             buttons = list((
-                               list(
-                                 extend = "excel",
-                                 text = "Download Full Results",
-                                 filename = 'anova',
-                                 exportOptions = list(modifier = list(page = "all"))
-                               )
-                             ))
-                           ),
-                           class = "display"
-                         ) %>%
-                         DT::renderDataTable(server = FALSE) %>%
-                         fluidPage()
-                     })
-                     output$tukeyTable_flex <- renderUI(if (tukey_needed) {
-                       tidy(local_tukey) %>%
-                         select(-null.value) %>%
-                         mutate(
-                           sig = case_when(
-                             adj.p.value <= 0.001 ~ "***",
-                             adj.p.value <= 0.01 ~ "**",
-                             adj.p.value <= 0.05 ~ "*",
-                             adj.p.value <= 0.1 ~ ".",
-                             .default = ""
-                           ),
-                           across(where(is.numeric), \(x) round(x, digits = 2))
-                         ) %>%
-                         DT::datatable(
-                           filter = "top",
-                           selection = "multiple",
-                           escape = FALSE,
-                           style = 'auto',
-                           extensions = 'Buttons',
-                           options = list(
-                             searching = TRUE,
-                             fixedColumns = TRUE,
-                             autoWidth = TRUE,
-                             ordering = TRUE,
-                             dom = 'tBp',
-                             buttons = list((
-                               list(
-                                 extend = "excel",
-                                 text = "Download Full Results",
-                                 filename = 'tukey',
-                                 exportOptions = list(modifier = list(page = "all"))
-                               )
-                             ))
-                           ),
-                           class = "display"
-                         ) %>%
-                         DT::renderDataTable(server = FALSE) %>%
-                         fluidPage()
-                     } else {
-                       ''
-                     })
-                     output$tukeyLetters_flex <- renderUI(if (letters_needed) {
-                       {
-                         local_names %>%
-                           rename(!!(paste(
-                             combined_inputs$tukey_group, collapse = ":"
-                           )) := "group")
-                       } %>%
-                         mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%
-                         DT::datatable(
-                           filter = "top",
-                           selection = "multiple",
-                           escape = FALSE,
-                           style = 'auto',
-                           extensions = 'Buttons',
-                           options = list(
-                             searching = TRUE,
-                             fixedColumns = TRUE,
-                             autoWidth = TRUE,
-                             ordering = TRUE,
-                             dom = 'tBp',
-                             buttons = list((
-                               list(
-                                 extend = "excel",
-                                 text = "Download Full Results",
-                                 filename = 'letters',
-                                 exportOptions = list(modifier = list(page = "all"))
-                               )
-                             ))
-                           ),
-                           class = "display"
-                         ) %>%
-                         DT::renderDataTable(server = FALSE) %>%
-                         fluidPage()
-                     } else {
-                       ''
-                     })
-                     output$raw_flex <- renderUI({
-                       local_table
-                       local_table %>%
-                         mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%
-                         DT::datatable(
-                           filter = "top",
-                           selection = "multiple",
-                           escape = FALSE,
-                           style = 'auto',
-                           extensions = 'Buttons',
-                           options = list(
-                             searching = TRUE,
-                             fixedColumns = TRUE,
-                             autoWidth = TRUE,
-                             ordering = TRUE,
-                             dom = 'tBp',
-                             buttons = list((
-                               list(
-                                 extend = "excel",
-                                 text = "Download Full Results",
-                                 filename = 'raw',
-                                 exportOptions = list(modifier = list(page = "all"))
-                               )
-                             ))
-                           ),
-                           class = "display"
-                         ) %>%
-                         DT::renderDataTable(server = FALSE) %>%
-                         fluidPage()
-                     })
-                   }#anova-tukey-letters-output
+          local_anova <- {
+            aov(as.formula(local_model_d), data = initial_table)
+          }
+          tukey_needed <- {
+            as.formula(local_model_d) %>%
+              all.vars() %>%
+              length() > 1
+          }
+          logger::log_info(paste0('tukey_needed:', tukey_needed))
 
-                   if (!combined_inputs$timeseries_plot){
-                     set.seed(42)
-                     plot_d <- {
-                       local_table %>%
-                         ggplot(aes(
-                           x = as.POSIXct(timestamp_group, tz = 'UTC'),
-                           y = !!sym(combined_inputs$out_variables),
-                           color = letter,
-                           group = letter,
-                           fill = letter
-                         )) +
-                         geom_violin(
-                           na.rm = TRUE,
-                           width = 0.1,
-                           color = "black",
-                           alpha = 1,
-                           draw_quantiles = c(0.25, 0.5, 0.75),
-                           position = position_dodge(width = 0.8)
-                         ) +
-                         geom_jitter(
-                           height = 0,
-                           width = 0.1,
-                           color = "black",
-                           alpha = 0.3
-                         ) +
-                         geom_label(
-                           aes(
-                             label = letter,
-                             y = quantile(
-                               !!sym(combined_inputs$out_variables),
-                               probs = seq(0, 1, .05),
-                               na.rm = TRUE
-                             )['100%'] * 1.01
-                           ),
-                           color = 'black',
-                           fill = 'white',
-                           alpha = 0.5,
-                           size = 4,
-                           vjust = 1,
-                           position = position_dodge(width = 0.8)
-                         ) +
-                         labs(x = 'time',
-                              y = ifelse(
-                                combined_inputs$deltas,
-                                paste0('delta_', combined_inputs$out_variables),
-                                combined_inputs$out_variables
-                              )) +
-                         scale_x_datetime() +
-                         scale_fill_viridis(discrete = TRUE) +
-                         facet_grid(combined_inputs$facet_formula,
-                                    labeller = label_both,
-                                    scales = 'free_x') +
-                         theme_gray() +
-                         theme(
-                           text = element_text(size = 12),
-                           axis.text.x = element_blank(),
-                           axis.ticks.x = element_blank()
-                         )
-                     }
-                   } else {
-                     set.seed(42)
-                     plot_d <- {
-                       local_table %>%
-                         ggplot(aes(
-                           x = as.POSIXct(timestamp_group, tz = 'UTC'),
-                           y = !!sym(combined_inputs$out_variables),
-                           color = !!sym(combined_inputs$gene_grouping),
-                           group = !!sym(combined_inputs$gene_grouping),
-                           fill = !!sym(combined_inputs$gene_grouping)
-                         )) +
-                         geom_point(
-                           na.rm = TRUE,
-                           width = 0.1,
-                           alpha = 1,
-                           draw_quantiles = c(0.25, 0.5, 0.75),
-                           position = position_dodge(width = 0.8)
-                         ) +
-                         geom_smooth() +
-                         geom_label(
-                           aes(
-                             label = letter,
-                             y = quantile(
-                               !!sym(combined_inputs$out_variables),
-                               probs = seq(0, 1, .05),
-                               na.rm = TRUE
-                             )['100%'] * 1.01
-                           ),
-                           color = 'black',
-                           fill = 'white',
-                           alpha = 0.2,
-                           size = 4,
-                           vjust = 1,
-                           position = position_dodge(width = 0.8)
-                         ) +
-                         labs(x = 'time',
-                              y = ifelse(
-                                combined_inputs$deltas,
-                                paste0('delta_', combined_inputs$out_variables),
-                                combined_inputs$out_variables
-                              )) +
-                         scale_x_datetime(date_minor_breaks = "3 days") +
-                         scale_fill_viridis(discrete = TRUE) +
-                         facet_grid(combined_inputs$facet_formula,
-                                    labeller = label_both,
-                                    scales = 'free_x') +
-                         theme_gray() +
-                         theme(
-                           text = element_text(size = 12)
-                         )
-                     }
-                   }
+          letters_needed <- {
+            tukey_needed &
+              length(vecsets::vsetdiff(
+                sort(combined_inputs$tukey_group),
+                sort(combined_inputs$grouping_factors)
+              )) == 0
+          }
+          local_tukey <- if (tukey_needed) {
+            TukeyHSD(local_anova, ordered = TRUE) %>%
+              purrr::modify_depth(5, \(x) replace_na(x, replace = 0), .ragged = TRUE)
+          } else {
+            NA
+          }
+          local_names <- if (letters_needed) {
+            multcompLetters4(local_anova, local_tukey) %>%
+              .[[paste(sort(combined_inputs$tukey_group),
+                       sep = ':',
+                       collapse = ':')]] %>%
+              as.data.frame.list() %>%
+              as_tibble(rownames = 'group') %>%
+              select('group', 'Letters') %>%
+              rename(letter = Letters)
+          } else {
+            NA
+          }
+          local_table <- if (letters_needed) {
+            initial_table %>%
+              filter(!is.na(!!combined_inputs$out_variables)) %>%
+              left_join(local_names, by = c('group' = 'group'))
+          } else {
+            initial_table %>%
+              mutate(letter = '-')
+          }
+        }#anova-tukey-letters-calc
 
-                   output$distPlot <- renderPlot(execOnResize = FALSE, {
-                     plot_d
-                   })
+        {
+          output$formula <- renderUI({
+            HTML(as.character(
+              div(style = "text-align: center; font-weight: bold;", local_model_d)
+            ))
+          })
+          output$descriptiveTable_flex <- renderUI({
+            local_descriptive %>%
+              mutate(across(where(is.numeric), ~ round(., digits = 2))) %>%
+              DT::renderDT(
+                options = list(
+                  server = TRUE,
+                  filter = "top",
+                  selection = "multiple",
+                  searching = TRUE,
+                  fixedColumns = TRUE,
+                  autoWidth = TRUE,
+                  ordering = TRUE,
+                  dom = 'tBp',
+                  buttons = list(
+                    'excel', 'csv',
+                    list(
+                      extend = "excel",
+                      text = "Download Full Results",
+                      filename = 'descriptive',
+                      exportOptions = list(
+                        columns = ':visible',
+                        modifier = list(page = "all")
+                      )
+                    )
+                  )
+                )
+              )
+          })
+          output$anovaTable_flex <- renderUI({
+            local_anova <- tidy(local_anova)
 
-                   output$savePlot <- downloadHandler(
-                     filename = function() {
-                       "plot.svg"
-                     },
-                     content = function(file) {
-                       plot <- plot_d
-                       local_model <- local_model_d
-                       ggsave(
-                         file,
-                         plot + ggtitle(local_model),
-                         device = "svg",
-                         width = 16,
-                         height = 9
-                       )
-                     }
-                   )
-                 }
+            local_anova %>%
+              mutate(
+                sig = case_when(
+                  p.value <= 0.001 ~ "***",
+                  p.value <= 0.01 ~ "**",
+                  p.value <= 0.05 ~ "*",
+                  p.value <= 0.1 ~ ".",
+                  TRUE ~ ""
+                )
+              ) %>%
+              mutate(across(where(is.numeric), ~ round(., digits = 2))) %>%
+              DT::renderDT(
+                options = list(
+                  server = TRUE,
+                  filter = "top",
+                  selection = "multiple",
+                  searching = TRUE,
+                  fixedColumns = TRUE,
+                  autoWidth = TRUE,
+                  ordering = TRUE,
+                  dom = 'tBp',
+                  buttons = list(
+                    'excel', 'csv',
+                    list(
+                      extend = "excel",
+                      text = "Download Full Results",
+                      filename = 'anova',
+                      exportOptions = list(
+                        columns = ':visible',
+                        modifier = list(page = "all")
+                      )
+                    )
+                  )
+                ),
+                class = "display"
+              )
+          })
+          output$tukeyTable_flex <- renderUI({
+            if (tukey_needed) {
+              local_tukey <- tidy(local_tukey) %>%
+                select(-null.value) %>%
+                mutate(
+                  sig = case_when(
+                    adj.p.value <= 0.001 ~ "***",
+                    adj.p.value <= 0.01 ~ "**",
+                    adj.p.value <= 0.05 ~ "*",
+                    adj.p.value <= 0.1 ~ ".",
+                    TRUE ~ ""
+                  )
+                ) %>%
+                mutate(across(where(is.numeric), ~ round(., digits = 2)))
 
-               },
-               ignoreInit = FALSE, priority=10)
+              local_tukey %>%
+                DT::renderDT(
+                  options = list(
+                    server = TRUE,
+                    filter = "top",
+                    selection = "multiple",
+                    searching = TRUE,
+                    fixedColumns = TRUE,
+                    autoWidth = TRUE,
+                    ordering = TRUE,
+                    dom = 'tBp',
+                    buttons = list(
+                      'excel',
+                      'csv',
+                      list(
+                        extend = "excel",
+                        text = "Download Full Results",
+                        filename = 'tukey',
+                        exportOptions = list(columns = ':visible', modifier = list(page = "all"))
+                      )
+                    )
+                  ),
+                  class = "display"
+                )
+                       } else {
+                         ''
+                       }
+            })
+
+
+          output$tukeyLetters_flex <- renderUI(if (letters_needed) {
+            {
+              local_names %>%
+                rename(!!(
+                  paste(combined_inputs$tukey_group, collapse = ":")
+                ) := "group")
+            } %>%
+              mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%
+              DT::renderDT(
+                options = list(
+                  server = TRUE,
+                  filter = "top",
+                  selection = "multiple",
+                  searching = TRUE,
+                  fixedColumns = TRUE,
+                  autoWidth = TRUE,
+                  ordering = TRUE,
+                  dom = 'tBp',
+                  buttons = list(
+                    'excel', 'csv',
+                    list(
+                      extend = "excel",
+                      text = "Download Full Results",
+                      filename = 'letters',
+                      exportOptions = list(
+                        columns = ':visible',
+                        modifier = list(page = "all")
+                      )
+                    )
+                  )
+                ),
+                class = "display"
+              )
+          } else {
+            ''
+          })
+          output$raw_flex <- renderUI({
+            local_table
+            local_table %>%
+              mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%
+              DT::renderDT(
+                options = list(
+                  server = TRUE,
+                  filter = "top",
+                  selection = "multiple",
+                  searching = TRUE,
+                  fixedColumns = TRUE,
+                  autoWidth = TRUE,
+                  ordering = TRUE,
+                  dom = 'tBp',
+                  buttons = list(
+                    'excel', 'csv',
+                    list(
+                      extend = "excel",
+                      text = "Download Full Results",
+                      filename = 'anova',
+                      exportOptions = list(
+                        columns = ':visible',
+                        modifier = list(page = "all")
+                      )
+                    )
+                  )
+                ),
+                class = "display"
+              )
+          })
+        }#anova-tukey-letters-output
+
+        if (!combined_inputs$timeseries_plot) {
+          set.seed(42)
+
+          plot_d <- {
+            local_table %>%
+              ggplot(aes(
+                x = as.POSIXct(timestamp_group, tz = 'UTC'),
+                y = !!sym(combined_inputs$out_variables),
+                color = letter,
+                group = letter,
+                fill = letter
+              )) +
+              geom_violin(
+                na.rm = TRUE,
+                width = 0.1,
+                color = "black",
+                alpha = 1,
+                draw_quantiles = c(0.25, 0.5, 0.75),
+                position = position_dodge(width = 0.8)
+              ) +
+              {
+                if (nrow(local_table) > 2000) {
+                  geom_jitter(
+                    data = local_table %>%
+                      {
+                        if (most_interactive %in% colnames(.)){
+                          . %>% group_by_at(most_interactive) %>%
+                            slice_sample(n = 5) %>%
+                            ungroup()
+                        } else {
+                          .
+                        }
+                      },
+                    aes(
+                      x = as.POSIXct(timestamp_group, tz = 'UTC'),
+                      y = !!sym(combined_inputs$out_variables)
+                    ),
+                    height = 0,
+                    width = 0.1,
+                    color = "black",
+                    alpha = 0.3
+                  )
+                } else {
+                  geom_jitter(
+                    height = 0,
+                    width = 0.1,
+                    color = "black",
+                    alpha = 0.3
+                  )
+                }
+              } +
+              geom_label(
+                aes(
+                  label = letter,
+                  y = quantile(
+                    !!sym(combined_inputs$out_variables),
+                    probs = seq(0, 1, .05),
+                    na.rm = TRUE
+                  )['100%'] * 1.01
+                ),
+                color = 'black',
+                fill = 'white',
+                alpha = 0.5,
+                size = 4,
+                vjust = 1,
+                position = position_dodge(width = 0.8)
+              ) +
+              labs(x = 'time', y =
+                     combined_inputs$out_variables) +
+              scale_x_datetime() +
+              scale_fill_viridis(discrete = TRUE) +
+              facet_grid(combined_inputs$facet_formula,
+                         labeller = label_both,
+                         scales = 'free_x') +
+              theme_gray() +
+              theme(
+                text = element_text(size = 12),
+                axis.text.x = element_blank(),
+                axis.ticks.x = element_blank()
+              )
+          }
+        } else {
+          set.seed(42)
+
+          plot_d <- {
+            local_table %>%
+              ggplot(aes(
+                x = as.POSIXct(timestamp_group, tz = 'UTC'),
+                y = !!sym(combined_inputs$out_variables),
+                color = !!sym(combined_inputs$gene_grouping),
+                group = !!sym(combined_inputs$gene_grouping),
+                fill = !!sym(combined_inputs$gene_grouping)
+              )) +
+              {
+                if (nrow(local_table) > 2000) {
+                  list(
+                    geom_point(
+                      data = local_table %>%
+                        {
+                          if (most_interactive %in% colnames(.)){
+                            . %>% group_by_at(most_interactive) %>%
+                              slice_sample(n = 5) %>%
+                              ungroup()
+                          } else {
+                            .
+                          }
+                        },
+                      aes(
+                        x = as.POSIXct(timestamp_group, tz = 'UTC'),
+                        y = !!sym(combined_inputs$out_variables)
+                      ),
+                      na.rm = TRUE,
+                      width = 0.1,
+                      alpha = 1,
+                      draw_quantiles = c(0.25, 0.5, 0.75),
+                      position = position_dodge(width = 0.8)
+                    ),
+                    geom_smooth(
+                      data = local_table %>%
+                        {
+                          if (most_interactive %in% colnames(.)){
+                            . %>% group_by_at(most_interactive) %>%
+                              slice_sample(n = 5) %>%
+                              ungroup()
+                          } else {
+                            .
+                          }
+                        },
+                      aes(
+                        x = as.POSIXct(timestamp_group, tz = 'UTC'),
+                        y = !!sym(combined_inputs$out_variables)
+                      )
+                    )
+                  )
+                } else {
+                  list(
+                    geom_point(
+                      na.rm = TRUE,
+                      width = 0.1,
+                      alpha = 1,
+                      draw_quantiles = c(0.25, 0.5, 0.75),
+                      position = position_dodge(width = 0.8)
+                    ),
+                    geom_smooth()
+                  )
+                }
+              } +
+              geom_label(
+                aes(
+                  label = letter,
+                  y = quantile(
+                    !!sym(combined_inputs$out_variables),
+                    probs = seq(0, 1, .05),
+                    na.rm = TRUE
+                  )['100%'] * 1.01
+                ),
+                color = 'black',
+                fill = 'white',
+                alpha = 0.2,
+                size = 4,
+                vjust = 1,
+                position = position_dodge(width = 0.8)
+              ) +
+              labs(x = 'time', y =
+                     combined_inputs$out_variables) +
+              scale_x_datetime(date_minor_breaks = "3 days") +
+              scale_fill_viridis(discrete = TRUE) +
+              facet_grid(combined_inputs$facet_formula,
+                         labeller = label_both,
+                         scales = 'free_x') +
+              theme_gray() +
+              theme(text = element_text(size = 12))
+          }
+        }
+
+        output$distPlot <- renderPlot(execOnResize = FALSE, {
+          plot_d
+        })
+
+        output$savePlot <- downloadHandler(
+          filename = function() {
+            "plot.svg"
+          },
+          content = function(file) {
+            plot <- plot_d
+            local_model <- local_model_d
+            ggsave(
+              file,
+              plot + ggtitle(local_model),
+              device = "svg",
+              width = 16,
+              height = 9
+            )
+          }
+        )
+      }
+
+    },
+    ignoreInit = FALSE,
+    priority = 10
+  )
 }
 
 # Run the application
