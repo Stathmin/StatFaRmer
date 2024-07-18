@@ -150,7 +150,7 @@ ui <- fluidPage(# Application title
         value = 'treatment ~ timestamp_group',
         placeholder = 'treatment ~ timestamp_group'
       ),
-      checkboxInput('timeseries_plot', ': plot timeseries with GAM', FALSE),
+      checkboxInput('timeseries_plot', ': plot timeseries with medians', FALSE),
 
       actionButton("submit", "Submit"),
       downloadButton("savePlot", "Save Plot as SVG")
@@ -709,26 +709,6 @@ server <- function(input, output, session) {
               ) +
               {
                 if (nrow(local_table) > 2000) {
-                  geom_jitter(
-                    data = local_table %>%
-                      {
-                        if (all(most_interactive %in% colnames(.))){
-                          . %>% group_by_at(most_interactive) %>%
-                            slice_sample(n = 5) %>%
-                            ungroup()
-                        } else {
-                          .
-                        }
-                      },
-                    aes(
-                      x = as.POSIXct(timestamp_group, tz = 'UTC'),
-                      y = !!sym(combined_inputs$out_variables)
-                    ),
-                    height = 0,
-                    width = 0.1,
-                    color = "black",
-                    alpha = 0.3
-                  )
                 } else {
                   geom_jitter(
                     height = 0,
@@ -783,72 +763,29 @@ server <- function(input, output, session) {
               {
                 if (nrow(local_table) > 2000) {
                   list(
-                    geom_point(
-                      data = local_table %>%
-                        {
-                          if (all(most_interactive %in% colnames(.))){
-                            . %>% group_by_at(most_interactive) %>%
-                              slice_sample(n = 5) %>%
-                              ungroup()
-                          } else {
-                            .
-                          }
-                        },
-                      aes(
-                        x = as.POSIXct(timestamp_group, tz = 'UTC'),
-                        y = !!sym(combined_inputs$out_variables)
-                      ),
+                    geom_density2d(
                       na.rm = TRUE,
                       width = 0.1,
                       alpha = 1,
-                      draw_quantiles = c(0.25, 0.5, 0.75),
-                      position = position_dodge(width = 0.8)
-                    ),
-                    geom_smooth(
-                      data = local_table %>%
-                        {
-                          if (all(most_interactive %in% colnames(.))){
-                            . %>% group_by_at(most_interactive) %>%
-                              slice_sample(n = 5) %>%
-                              ungroup()
-                          } else {
-                            .
-                          }
-                        },
-                      aes(
-                        x = as.POSIXct(timestamp_group, tz = 'UTC'),
-                        y = !!sym(combined_inputs$out_variables)
-                      )
+                      draw_quantiles = c(0.25, 0.5, 0.75)
                     )
                   )
                 } else {
                   list(
-                    geom_point(
-                      na.rm = TRUE,
+                    geom_jitter(
+                      height = 0,
                       width = 0.1,
-                      alpha = 1,
-                      draw_quantiles = c(0.25, 0.5, 0.75),
-                      position = position_dodge(width = 0.8)
-                    ),
-                    geom_smooth()
+                      color = "black",
+                      alpha = 0.3
+                    )
                   )
                 }
               } +
-              geom_label(
-                aes(
-                  label = letter,
-                  y = quantile(
-                    !!sym(combined_inputs$out_variables),
-                    probs = seq(0, 1, .05),
-                    na.rm = TRUE
-                  )['100%'] * 1.01
-                ),
-                color = 'black',
-                fill = 'white',
-                alpha = 0.2,
-                size = 4,
-                vjust = 1,
-                position = position_dodge(width = 0.8)
+              stat_summary(
+                aes(group = 1),
+                fun = median,
+                geom = "line",
+                size = 1.5
               ) +
               labs(x = 'time', y =
                      combined_inputs$out_variables) +
