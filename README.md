@@ -21,15 +21,16 @@ StatFaRmer aims to replicate methods from [(Schmidt et al., 2023)](https://www.s
 - **Facet Syntax**: The facet syntax aligns with R formula principles. You can position variables from the grouping factors list on either side of ~ to create vertically or horizontally distinct subplots; using *~ 1* removes faceting.
 
 ## Installation
-To install StatFaRmer, run these commands in your terminal:
+Ensure you have R and Git installed. You can download R from [CRAN](https://cran.r-project.org/) and Git from [the official Git website](https://git-scm.com/).
 
+To install StatFaRmer, run these commands in your terminal:
+- clone the project with this line in terminal:
 ```bash
 git clone https://github.com/Stathmin/StatFarmer
 ```
-
-## Running Example, Bash
-To install the project and its environment, run
+- to install the project and its environment, run:
 ```bash
+cd StatFaRmer
 Rscript install.R
 ```
 The initial run processes tables, creates necessary files and launches the Shiny app:
@@ -42,7 +43,7 @@ Rscript just_shiny.R
 ```
 
 ## Running Example on Windows/Linux with RStudio:
-- Open "StatFaRmer.Rproj" in RStudio.
+- Open "StatFaRmer.Rproj" in [RStudio](https://posit.co/download/rstudio-desktop/).
 - Execute the "install.R" script by clicking the "Source" button.
 - Launch the "main.R" application using RStudio's interface.
 - Upon closing the StatFaRmer web page, terminate its execution in RStudio by pressing "ESC".

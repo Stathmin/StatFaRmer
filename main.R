@@ -1,12 +1,8 @@
-
-
 # cleaning -----
 rm(list = ls())
 gc(reset = TRUE)
 
 # renv -----
-renv::activate()
-here::i_am('README.md')
 set.seed(42)
 
 
@@ -77,6 +73,8 @@ within_groups_not_outliers <- planteye_table %>% #delete over-3-sigmas
   dplyr::mutate(dplyr::across(dplyr::where(is.numeric),
                               {\(x) abs(x - mean(x)) / sd(x) <= 3})) %>%
   dplyr::ungroup() %>%
+  dplyr::mutate(dplyr::across(dplyr::where(is.logical),
+                              ~dplyr::if_else(is.na(.x), TRUE, .x))) %>%
   tidyr::pivot_longer(dplyr::where(is.logical),
                       names_to = 'trait',
                       values_to = 'trait_value') %>%
@@ -90,7 +88,7 @@ planteye_table <- planteye_table %>%
                       values_to = 'trait_value') %>%
   dplyr::right_join(within_groups_not_outliers) %>%
   tidyr::pivot_wider(names_from = 'trait',
-                      values_from = 'trait_value')
+                     values_from = 'trait_value')
 
 remove(within_groups_not_outliers)
 
@@ -133,8 +131,10 @@ logit_numeric_colnames <- planteye_table %>%
 
 # import unit data -----
 unit_table_1 <- readr::read_csv(unit_file_1) %>%
-  dplyr::rename(dplyr::all_of(c(repetition = 'Repeat')))
-unit_table_2 <- readr::read_csv(unit_file_2)
+  #dplyr::rename(dplyr::all_of(c(repetition = 'Repeat'))) %>%
+  dplyr::mutate_all(as.character)
+unit_table_2 <- readr::read_csv(unit_file_2) %>%
+  dplyr::mutate_all(as.character)
 
 unit_table <- unit_table_1 %>%
   dplyr::left_join(unit_table_2, by = 'V.T.R') %>%
@@ -142,7 +142,7 @@ unit_table <- unit_table_1 %>%
 
 remove(list = c('unit_file_1', 'unit_file_2',
                 'unit_table_1', 'unit_table_2')
-       )
+)
 
 # import groups table -----
 if (length(group_file) > 0) {
@@ -197,9 +197,7 @@ merged_table <- merged_table %>%
   dplyr::rename(treatment = treatment.y) %>%
   dplyr::mutate(timestamp = as.POSIXct(timestamp, tz = 'UTC')) %>%
   dplyr::mutate(
-    treatment = as.character(treatment),
-    repetition = as.character(repetition),
-    plant = as.character(plant)
+    treatment = as.character(treatment)
   ) %>%
   janitor::remove_constant()
 
@@ -258,9 +256,6 @@ gc(reset = TRUE)
 
 # shiny -------------------------------------------------------------------
 
-
 #merged_table <- readRDS('shiny/merged_table.rds') #For debug
-#reactlog::reactlog_enable()
 
 shiny::runApp('shiny', launch.browser = TRUE)
-#shiny::reactlogShow()
