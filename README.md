@@ -20,24 +20,25 @@ StatFaRmer aims to replicate methods from [(Schmidt et al., 2023)](https://www.s
 - **Table Download**: In StatFaRmer Shiny App, all tables can be easily downloaded after applying filters and subsets (via the Download Full Results button).
 - **Facet Syntax**: The facet syntax aligns with R formula principles. You can position variables from the grouping factors list on either side of ~ to create vertically or horizontally distinct subplots; using *~ 1* removes faceting.
 
-## Installation
+## Installation and Use
 Ensure you have R and Git installed. You can download R from [CRAN](https://cran.r-project.org/) and Git from [the official Git website](https://git-scm.com/).
 
 To install StatFaRmer, run these commands in your terminal:
 - clone the project with this line in terminal:
 ```bash
-git clone https://github.com/Stathmin/StatFarmer
+git clone https://github.com/Stathmin/StatFaRmer
 ```
 - to install the project and its environment, run:
 ```bash
 cd StatFaRmer
 Rscript install.R
 ```
-The initial run processes tables, creates necessary files and launches the Shiny app:
+After installation:
+- the initial run of main.R processes tables, creates necessary files and launches the Shiny app:
 ```bash
 Rscript main.R
 ```
-After the initial run, you can start the Shiny app separately with:
+- you can later start the Shiny app separately with:
 ```bash
 Rscript just_shiny.R
 ```
