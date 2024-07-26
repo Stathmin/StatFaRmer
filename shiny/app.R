@@ -432,9 +432,9 @@ server <- function(input, output, session) {
             aov(as.formula(local_model_d), data = initial_table)
           }
           tukey_needed <- {
-            as.formula(local_model_d) %>%
+            (as.formula(local_model_d) %>%
               all.vars() %>%
-              length() > 1
+              length() > 1) & (length(input$tukey_group) > 0)
           }
           logger::log_info(paste0('tukey_needed:', tukey_needed))
 
@@ -782,10 +782,10 @@ server <- function(input, output, session) {
                 }
               } +
               stat_summary(
-                aes(group = 1),
+                aes(group = !!sym(combined_inputs$gene_grouping)),
                 fun = median,
                 geom = "line",
-                size = 1.5
+                linewidth = 1.5
               ) +
               labs(x = 'time', y =
                      combined_inputs$out_variables) +
