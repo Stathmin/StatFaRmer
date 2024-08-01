@@ -57,7 +57,7 @@ get_unique <- function(table, string) {
     sort
 }
 
-grouping_factors <- merged_table %>%
+anova_factors <- merged_table %>%
   select(!is.numeric, -timestamp) %>%
   colnames %>% sort
 
@@ -66,7 +66,12 @@ cultivars <- get_unique(merged_table, 'cultivar')
 timestamp_groups <- get_unique(merged_table, 'timestamp_group')
 named_timestamp_groups <- timestamp_groups
 names(named_timestamp_groups) <-
-  timestamp_groups %>% format(format = '%m-%d %H:%M')
+  timestamp_groups %>%
+    format(format = '%m-%d %H:%M') %>%
+    purrr::map2_vec(
+      get_unique(merged_table, 'dbscan_cluster'),
+      ~glue::glue("{.x} (cluster {.y})")
+    )
 
 out_variables <-
   merged_table %>% select(where(is.numeric)) %>% colnames() %>% sort()
@@ -81,16 +86,16 @@ ui <- fluidPage(# Application title
   sidebarLayout(
     sidebarPanel(
       selectInput(
-        'grouping_factors',
-        'Grouping factors:',
-        grouping_factors[grouping_factors != "timestamp_group"],
+        'anova_factors',
+        'ANOVA factors:',
+        anova_factors[anova_factors != "timestamp_group"],
         multiple = TRUE,
         selected = c('treatment', 'dbscan_clusters')
       ),
       selectInput(
-        'tukey_group',
-        'Tukey group:',
-        grouping_factors[grouping_factors != "timestamp_group"],
+        'tukey_factors',
+        'Tukey factors:',
+        anova_factors[anova_factors != "timestamp_group"],
         multiple = TRUE,
         selected = c('treatment', 'dbscan_clusters')
       ),
@@ -219,8 +224,8 @@ server <- function(input, output, session) {
       timestamp_groups = isolate(unname(input$timestamp_groups)),
       out_variables = isolate(input$out_variables),
       facet_formula = isolate(as.formula(input$facet_formula)),
-      grouping_factors = isolate(sort(input$grouping_factors)),
-      tukey_group = isolate(sort(input$tukey_group)),
+      anova_factors = isolate(sort(input$anova_factors)),
+      tukey_factors = isolate(sort(input$tukey_factors)),
       timeseries_plot = isolate(input$timeseries_plot)
     )
   })
@@ -235,8 +240,8 @@ server <- function(input, output, session) {
     combined_inputs$timestamp_groups <- initial_combined_inputs$timestamp_groups
     combined_inputs$out_variables <- initial_combined_inputs$out_variables
     combined_inputs$facet_formula <- initial_combined_inputs$facet_formula
-    combined_inputs$grouping_factors <- initial_combined_inputs$grouping_factors
-    combined_inputs$tukey_group <- initial_combined_inputs$tukey_group
+    combined_inputs$anova_factors <- initial_combined_inputs$anova_factors
+    combined_inputs$tukey_factors <- initial_combined_inputs$tukey_factors
     combined_inputs$timeseries_plot <- initial_combined_inputs$timeseries_plot
   }, priority = 50)
 
@@ -248,8 +253,8 @@ server <- function(input, output, session) {
     combined_inputs$timestamp_groups = isolate(unname(input$timestamp_groups))
     combined_inputs$out_variables = isolate(input$out_variables)
     combined_inputs$facet_formula = isolate(as.formula(input$facet_formula))
-    combined_inputs$grouping_factors = isolate(sort(input$grouping_factors))
-    combined_inputs$tukey_group = isolate(sort(input$tukey_group))
+    combined_inputs$anova_factors = isolate(sort(input$anova_factors))
+    combined_inputs$tukey_factors = isolate(sort(input$tukey_factors))
     combined_inputs$timeseries_plot = isolate(input$timeseries_plot)
   }, priority = 50)
 
@@ -323,14 +328,14 @@ server <- function(input, output, session) {
       combined_inputs$timestamp_groups,
       combined_inputs$out_variables,
       combined_inputs$facet_formula,
-      combined_inputs$grouping_factors,
-      combined_inputs$tukey_group
+      combined_inputs$anova_factors,
+      combined_inputs$tukey_factors
     ),
     {
         {
         local_model_d <- {
           formulate(combined_inputs$out_variables,
-                    combined_inputs$grouping_factors)
+                    combined_inputs$anova_factors)
         }
         logger::log_info(paste0('local_model_d:', local_model_d))
 
@@ -361,11 +366,11 @@ server <- function(input, output, session) {
             arrange(timestamp_group) %>%
             mutate(timestamp_group = as.factor(timestamp_group)) %>%
             {
-              if (!is.null(combined_inputs$tukey_group)) {
+              if (!is.null(combined_inputs$tukey_factors)) {
                 unite(
                   data = .,
                   col = group,
-                  !!(sort(combined_inputs$tukey_group)),
+                  !!(sort(combined_inputs$tukey_factors)),
                   sep = ":",
                   remove = FALSE
                 )
@@ -386,11 +391,11 @@ server <- function(input, output, session) {
               ))) %>%
               arrange(!!sym(combined_inputs$out_variables)) %>%
               {
-                if (!is.null(combined_inputs$tukey_group)) {
+                if (!is.null(combined_inputs$tukey_factors)) {
                   unite(
                     data = .,
                     col = group,
-                    !!(sort(combined_inputs$tukey_group)),
+                    !!(sort(combined_inputs$tukey_factors)),
                     sep = ":",
                     remove = FALSE
                   )
@@ -437,15 +442,15 @@ server <- function(input, output, session) {
           tukey_needed <- {
             (as.formula(local_model_d) %>%
               all.vars() %>%
-              length() > 1) & (length(input$tukey_group) > 0)
+              length() > 1) & (length(input$tukey_factors) > 0)
           }
           logger::log_info(paste0('tukey_needed:', tukey_needed))
 
           letters_needed <- {
             tukey_needed &
               length(vecsets::vsetdiff(
-                sort(combined_inputs$tukey_group),
-                sort(combined_inputs$grouping_factors)
+                sort(combined_inputs$tukey_factors),
+                sort(combined_inputs$anova_factors)
               )) == 0
           }
           logger::log_info(paste0('letters_needed:', letters_needed))
@@ -459,7 +464,7 @@ server <- function(input, output, session) {
 
           local_names <- if (letters_needed) {
             multcompLetters4(local_anova, local_tukey) %>%
-              .[[paste(sort(combined_inputs$tukey_group),
+              .[[paste(sort(combined_inputs$tukey_factors),
                        sep = ':',
                        collapse = ':')]] %>%
               as.data.frame.list() %>%
@@ -651,7 +656,7 @@ server <- function(input, output, session) {
           render_local_letters <-  if (letters_needed) {
               local_names %>%
                 rename(!!(
-                  paste(combined_inputs$tukey_group, collapse = ":")
+                  paste(combined_inputs$tukey_factors, collapse = ":")
                 ) := "group")
             } else {
                 tibble::tibble()

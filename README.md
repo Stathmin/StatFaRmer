@@ -14,7 +14,7 @@ StatFaRmer aims to replicate methods from [(Schmidt et al., 2023)](https://www.s
 ![Shiny Interface](src/screenshot.png)
 
 - **Initial Data Processing**: clustering timestamps using DBSCAN, filtering out outliers within clusters based on a 3-sigma threshold, transforming percentages with logit, and merging data tables for further analysis.
-- **ANOVA Analysis**: ANOVA automatically includes all grouping factors and their interactions up to three-way. The Tukey group feature identifies which contrasts to examine within the ANOVA.
+- **ANOVA Analysis**: ANOVA automatically includes all ANOVA factors and their interactions up to three-way. The Tukey factors feature identifies which contrasts to examine within the ANOVA.
 - **dbscan_cluster**: This feature serves as a substitute for timestamp data, enabling faceting and factor selection in the analysis.
 - **Data subsetting**: Given grouping factor, selected treatments, selected cultivar and selected time clusters options, it is possible to test specific hypotheses for the given selected trait.
 - **Table Download**: In StatFaRmer Shiny App, all tables can be easily downloaded after applying filters and subsets (via the Download Full Results button).
