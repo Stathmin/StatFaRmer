@@ -153,6 +153,9 @@ ui <- fluidPage(# Application title
       checkboxInput('timeseries_plot', ': plot timeseries with medians', FALSE),
 
       actionButton("submit", "Submit"),
+
+      numericInput('plot_width', "Plot width, mm", 180),
+      numericInput('plot_height', "Plot height, mm", 112),
       downloadButton("savePlot", "Save Plot as SVG")
     ),
 
@@ -739,7 +742,7 @@ server <- function(input, output, session) {
               scale_x_datetime() +
               scale_fill_viridis(discrete = TRUE) +
               facet_grid(combined_inputs$facet_formula,
-                         labeller = label_both,
+                         #labeller = label_both,
                          scales = 'free_x') +
               theme_gray() +
               theme(
@@ -765,9 +768,7 @@ server <- function(input, output, session) {
                   list(
                     geom_density2d(
                       na.rm = TRUE,
-                      width = 0.1,
-                      alpha = 1,
-                      draw_quantiles = c(0.25, 0.5, 0.75)
+                      alpha = 0.2
                     )
                   )
                 } else {
@@ -792,7 +793,7 @@ server <- function(input, output, session) {
               scale_x_datetime(date_minor_breaks = "3 days") +
               scale_fill_viridis(discrete = TRUE) +
               facet_grid(combined_inputs$facet_formula,
-                         labeller = label_both,
+                         #labeller = label_both,
                          scales = 'free_x') +
               theme_gray() +
               theme(text = element_text(size = 12))
@@ -810,12 +811,15 @@ server <- function(input, output, session) {
           content = function(file) {
             plot <- plot_d
             local_model <- local_model_d
+            local_facet <- combined_inputs$facet_formula
+
             ggsave(
               file,
-              plot + ggtitle(local_model),
+              plot + ggtitle(paste0(c(local_model,local_facet), collapse = '\n')),
               device = "svg",
-              width = 16,
-              height = 9
+              width = input$plot_width,
+              height = input$plot_height,
+              units = 'mm'
             )
           }
         )
