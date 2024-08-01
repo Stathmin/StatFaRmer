@@ -95,16 +95,16 @@ ui <- fluidPage(# Application title
         selected = c('treatment', 'dbscan_clusters')
       ),
       selectInput(
-        'gene_grouping',
-        'Grouping gene:',
+        'factor_grouping',
+        'Grouping factor:',
         choices = vector_of_groups,
         selected = {
           vector_of_groups %>% tail(1)
         }
       ),
       selectizeInput(
-        'gene_groups',
-        'Gene groups:',
+        'factor_levels',
+        'Factor levels:',
         choices = get_unique(merged_table, {
           vector_of_groups %>% tail(1)
         }),
@@ -212,8 +212,8 @@ server <- function(input, output, session) {
 
   create_initial_combined_inputs <- reactive({
     list(
-      gene_grouping = isolate(input$gene_grouping),
-      gene_groups = isolate(input$gene_groups),
+      factor_grouping = isolate(input$factor_grouping),
+      factor_levels = isolate(input$factor_levels),
       treatments = isolate(input$treatments),
       cultivars = isolate(input$cultivars),
       timestamp_groups = isolate(unname(input$timestamp_groups)),
@@ -228,8 +228,8 @@ server <- function(input, output, session) {
   observe({
     initial_combined_inputs <- create_initial_combined_inputs()
 
-    combined_inputs$gene_grouping <- initial_combined_inputs$gene_grouping
-    combined_inputs$gene_groups <- initial_combined_inputs$gene_groups
+    combined_inputs$factor_grouping <- initial_combined_inputs$factor_grouping
+    combined_inputs$factor_levels <- initial_combined_inputs$factor_levels
     combined_inputs$treatments <- initial_combined_inputs$treatments
     combined_inputs$cultivars <- initial_combined_inputs$cultivars
     combined_inputs$timestamp_groups <- initial_combined_inputs$timestamp_groups
@@ -241,8 +241,8 @@ server <- function(input, output, session) {
   }, priority = 50)
 
   observeEvent(input$submit, {
-    combined_inputs$gene_grouping = isolate(input$gene_grouping)
-    combined_inputs$gene_groups = isolate(input$gene_groups)
+    combined_inputs$factor_grouping = isolate(input$factor_grouping)
+    combined_inputs$factor_levels = isolate(input$factor_levels)
     combined_inputs$treatments = isolate(input$treatments)
     combined_inputs$cultivars = isolate(input$cultivars)
     combined_inputs$timestamp_groups = isolate(unname(input$timestamp_groups))
@@ -253,16 +253,16 @@ server <- function(input, output, session) {
     combined_inputs$timeseries_plot = isolate(input$timeseries_plot)
   }, priority = 50)
 
-  observeEvent(input$gene_grouping,
+  observeEvent(input$factor_grouping,
                {
                  {
-                   unique_groups <- get_unique(merged_table, input$gene_grouping)
+                   unique_groups <- get_unique(merged_table, input$factor_grouping)
 
-                   if (!setequal(unique_groups, input$gene_groups)) {
+                   if (!setequal(unique_groups, input$factor_levels)) {
                      isolate(
                        updateSelectizeInput(
                          session,
-                         'gene_groups',
+                         'factor_levels',
                          choices = c(),
                          selected = c(),
                          server = TRUE
@@ -270,7 +270,7 @@ server <- function(input, output, session) {
                      )
                      updateSelectizeInput(
                        session,
-                       'gene_groups',
+                       'factor_levels',
                        choices = unique_groups,
                        selected = unique_groups,
                        server = TRUE
@@ -282,11 +282,11 @@ server <- function(input, output, session) {
                priority = 100)
 
   observeEvent(
-    c(input$gene_groups, input$gene_grouping),
+    c(input$factor_levels, input$factor_grouping),
     {
       {
         unique_cultivars <- merged_table %>%
-          filter(!!sym(input$gene_grouping) %in% input$gene_groups) %>%
+          filter(!!sym(input$factor_grouping) %in% input$factor_levels) %>%
           select('cultivar') %>%
           distinct() %>%
           arrange() %>%
@@ -356,7 +356,7 @@ server <- function(input, output, session) {
               treatment %in% combined_inputs$treatments,
               cultivar %in% combined_inputs$cultivars,
               as.character(timestamp_group) %in% as.character(combined_inputs$timestamp_groups),
-              !!sym(combined_inputs$gene_grouping) %in% combined_inputs$gene_groups
+              !!sym(combined_inputs$factor_grouping) %in% combined_inputs$factor_levels
             ) %>%
             arrange(timestamp_group) %>%
             mutate(timestamp_group = as.factor(timestamp_group)) %>%
@@ -759,9 +759,9 @@ server <- function(input, output, session) {
               ggplot(aes(
                 x = as.POSIXct(timestamp_group, tz = 'UTC'),
                 y = !!sym(combined_inputs$out_variables),
-                color = !!sym(combined_inputs$gene_grouping),
-                group = !!sym(combined_inputs$gene_grouping),
-                fill = !!sym(combined_inputs$gene_grouping)
+                color = !!sym(combined_inputs$factor_grouping),
+                group = !!sym(combined_inputs$factor_grouping),
+                fill = !!sym(combined_inputs$factor_grouping)
               )) +
               {
                 if (nrow(local_table) > 2000) {
@@ -783,7 +783,7 @@ server <- function(input, output, session) {
                 }
               } +
               stat_summary(
-                aes(group = !!sym(combined_inputs$gene_grouping)),
+                aes(group = !!sym(combined_inputs$factor_grouping)),
                 fun = median,
                 geom = "line",
                 linewidth = 1.5
