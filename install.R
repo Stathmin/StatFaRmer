@@ -25,7 +25,7 @@ install_statfarmer <- function() {
   renv::init()
 
   message("Hydrating renv environment...")
-  renv::hydrate(prompt = FALSE)
+  renv::install(prompt = FALSE)
 
   # Install flextable package
   message("Installing flextable package...")
