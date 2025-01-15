@@ -11,6 +11,7 @@ set.seed(42)
 project <- "project_NO3" # name of your project subfolder in data folder
 
 hours_eps <- 1 #time clustering distance in hours
+use_IQR <- FALSE #FALSE -> 3 sigmas; TRUE -> 3 IQR
 
 phenospex_file <- Sys.glob(paste0("data/",project, '/*_data.zip'))
 unit_file_1 <- Sys.glob(paste0("data/",project, '/*_handmade.csv'))
@@ -66,12 +67,21 @@ remove(list = c('dbscan_cluster', 'hours_eps'))
 
 # remove outlier groups -----
 
-within_groups_not_outliers <- planteye_table %>% #delete over-3-sigmas
+within_groups_not_outliers <- planteye_table %>%
   dplyr::group_by(dbscan_cluster) %>%
   dplyr::mutate(dplyr::across(dplyr::where(is.numeric),
-                              {\(x) (x - min(x))/(max(x) - min(x))})) %>%
-  dplyr::mutate(dplyr::across(dplyr::where(is.numeric),
-                              {\(x) abs(x - mean(x)) / sd(x) <= 3})) %>%
+                              {\(x) (x - min(x)) / (max(x) - min(x))})) %>%
+  dplyr::mutate(dplyr::across(dplyr::where(is.numeric), 
+                              \(x) {
+                                if (use_IQR) {
+                                  q1 <- quantile(x, 0.25, na.rm = TRUE)
+                                  q3 <- quantile(x, 0.75, na.rm = TRUE)
+                                  iqr <- q3 - q1
+                                  return(x >= (q1 - 1.5 * iqr) & x <= (q3 + 1.5 * iqr))
+                                } else {
+                                  return(abs(x - mean(x)) / sd(x) <= 3)
+                                }
+                              })) %>%
   dplyr::ungroup() %>%
   dplyr::mutate(dplyr::across(dplyr::where(is.logical),
                               ~dplyr::if_else(is.na(.x), TRUE, .x))) %>%
