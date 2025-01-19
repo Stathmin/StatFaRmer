@@ -37,11 +37,9 @@ generate_label_df <- function(TUKEY, variable) {
   return(Tukey.labels)
 }
 
-
 merged_table <-
   readRDS(stringr::str_interp('merged_table.rds'))
-vector_of_groups <-
-  readRDS(stringr::str_interp('vector_of_groups.rds'))
+
 merged_table[sapply(merged_table, is.infinite)] <- NA
 merged_table <- merged_table %>%
   arrange(timestamp) %>%
@@ -156,6 +154,7 @@ ui <- fluidPage(# Application title
         placeholder = 'treatment ~ timestamp_group'
       ),
       checkboxInput('timeseries_plot', ': plot timeseries with medians', FALSE),
+      checkboxInput('outliers_plot', ': plot with outliers', FALSE),
 
       actionButton("submit", "Submit"),
 
@@ -187,7 +186,9 @@ ui <- fluidPage(# Application title
           uiOutput("ANOVAvarNames"),
           verbatimTextOutput("anovaTable"),
           DT::DTOutput("anovaTable_flex"),
-          downloadButton("anovaTable_flex_downloadData", "Download Full Results")
+          downloadButton("anovaTable_flex_downloadData", "Download Full Results"),
+          verbatimTextOutput("anovaResults"),
+          plotOutput("ANOVAPlot")
         ),
         tabPanel(
           "Tukey",
@@ -226,7 +227,8 @@ server <- function(input, output, session) {
       facet_formula = isolate(as.formula(input$facet_formula)),
       anova_factors = isolate(sort(input$anova_factors)),
       tukey_factors = isolate(sort(input$tukey_factors)),
-      timeseries_plot = isolate(input$timeseries_plot)
+      timeseries_plot = isolate(input$timeseries_plot),
+      outliers_plot = isolate(input$outliers_plot)
     )
   })
 
@@ -243,6 +245,7 @@ server <- function(input, output, session) {
     combined_inputs$anova_factors <- initial_combined_inputs$anova_factors
     combined_inputs$tukey_factors <- initial_combined_inputs$tukey_factors
     combined_inputs$timeseries_plot <- initial_combined_inputs$timeseries_plot
+    combined_inputs$outliers_plot <- initial_combined_inputs$outliers_plot
   }, priority = 50)
 
   observeEvent(input$submit, {
@@ -256,6 +259,7 @@ server <- function(input, output, session) {
     combined_inputs$anova_factors = isolate(sort(input$anova_factors))
     combined_inputs$tukey_factors = isolate(sort(input$tukey_factors))
     combined_inputs$timeseries_plot = isolate(input$timeseries_plot)
+    combined_inputs$outliers_plot = isolate(input$outliers_plot)
   }, priority = 50)
 
   observeEvent(input$factor_grouping,
@@ -355,7 +359,7 @@ server <- function(input, output, session) {
         }
         logger::log_info(paste0('most_interactive:', paste0(most_interactive, collapse = ', ')))
 
-        initial_table <- {
+        initial_full_table <- {
           merged_table %>%
             filter(
               treatment %in% combined_inputs$treatments,
@@ -379,16 +383,18 @@ server <- function(input, output, session) {
               }
             } %>%
             select(-c(where(is.numeric), -!!combined_inputs$out_variables))
-        }
+        } %>% filter(!is.na(!!sym(
+          combined_inputs$out_variables
+        )))
+
+        initial_table <- initial_full_table %>% filter(outlier == FALSE)
+
         logger::log_info(paste0('length_initial_table:', nrow(initial_table)))
         }#fast parse
 
         {
           local_descriptive <- {
             initial_table %>%
-              filter(!is.na(!!sym(
-                combined_inputs$out_variables
-              ))) %>%
               arrange(!!sym(combined_inputs$out_variables)) %>%
               {
                 if (!is.null(combined_inputs$tukey_factors)) {
@@ -439,6 +445,7 @@ server <- function(input, output, session) {
           local_anova <- {
             aov(as.formula(local_model_d), data = initial_table)
           }
+
           tukey_needed <- {
             (as.formula(local_model_d) %>%
               all.vars() %>%
@@ -476,13 +483,14 @@ server <- function(input, output, session) {
           }
 
           local_table <- if (letters_needed) {
-            initial_table %>%
-              filter(!is.na(!!combined_inputs$out_variables)) %>%
+            initial_full_table %>%
               left_join(local_names, by = c('group' = 'group'))
           } else {
-            initial_table %>%
+            initial_full_table %>%
               mutate(letter = '-')
           }
+
+
           logger::log_info(paste0('local_table:', nrow(local_table)))
         }#anova-tukey-letters-calc
 
@@ -595,6 +603,26 @@ server <- function(input, output, session) {
             server = TRUE
           )}
 
+          output$anovaResults <- renderPrint({
+            shapiro_result <- shapiro.test(residuals(local_anova))
+            cat("Shapiro-Wilk Normality Test:\n")
+            print(shapiro_result)
+
+            # bartlett_result <- bartlett.test(as.formula(local_model_d), data = initial_table)
+            # cat("Bartlett's Test for Homogeneity of Variance:\n")
+            # print(bartlett_result)
+          })
+
+          output$ANOVAPlot <- renderPlot({
+            par(mfrow=c(1,2))
+
+            plot(local_anova, which=1, main="Residuals vs Fitted")
+
+            plot(local_anova, which=2, main="Normal Q-Q")
+
+            par(mfrow=c(1,1))
+          })
+
           output$anovaTable_flex_downloadData <- downloadHandler(
             filename = function() {
               paste("ANOVA_", Sys.Date(), ".xlsx", sep = "")
@@ -651,8 +679,6 @@ server <- function(input, output, session) {
             }
           )
 
-
-
           render_local_letters <-  if (letters_needed) {
               local_names %>%
                 rename(!!(
@@ -700,6 +726,7 @@ server <- function(input, output, session) {
 
           plot_d <- {
             local_table %>%
+              filter(outlier == FALSE) %>%
               ggplot(aes(
                 x = as.POSIXct(timestamp_group, tz = 'UTC'),
                 y = !!sym(combined_inputs$out_variables),
@@ -742,6 +769,20 @@ server <- function(input, output, session) {
                 vjust = 1,
                 position = position_dodge(width = 0.8)
               ) +
+              {if (combined_inputs$outliers_plot) {
+                list(
+                  geom_point(data = local_table %>% filter(outlier == TRUE),
+                              inherit.aes = FALSE,
+                              aes(
+                                x = as.POSIXct(timestamp_group, tz = 'UTC'),
+                                y = !!sym(combined_inputs$out_variables),
+                                group = !!sym(combined_inputs$factor_grouping),
+                              ),
+                              color = 'black',
+                              shape = 'X',
+                              size = 5
+                  )
+                )}} +
               labs(x = 'time', y =
                      combined_inputs$out_variables) +
               scale_x_datetime() +
@@ -761,6 +802,7 @@ server <- function(input, output, session) {
 
           plot_d <- {
             local_table %>%
+              filter(outlier == FALSE) %>%
               ggplot(aes(
                 x = as.POSIXct(timestamp_group, tz = 'UTC'),
                 y = !!sym(combined_inputs$out_variables),
@@ -793,6 +835,20 @@ server <- function(input, output, session) {
                 geom = "line",
                 linewidth = 1.5
               ) +
+              {if (combined_inputs$outliers_plot) {
+                list(
+                  geom_point(data = local_table %>% filter(outlier == TRUE),
+                              inherit.aes = FALSE,
+                              aes(
+                                x = as.POSIXct(timestamp_group, tz = 'UTC'),
+                                y = !!sym(combined_inputs$out_variables),
+                                group = !!sym(combined_inputs$factor_grouping),
+                              ),
+                              color = 'black',
+                              shape = 'X',
+                              size = 5
+                  )
+                )}} +
               labs(x = 'time', y =
                      combined_inputs$out_variables) +
               scale_x_datetime(date_minor_breaks = "3 days") +
