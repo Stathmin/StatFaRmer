@@ -39,6 +39,8 @@ generate_label_df <- function(TUKEY, variable) {
 
 merged_table <-
   readRDS(stringr::str_interp('merged_table.rds'))
+vector_of_groups <-
+  readRDS(stringr::str_interp('vector_of_groups.rds'))
 
 merged_table[sapply(merged_table, is.infinite)] <- NA
 merged_table <- merged_table %>%

@@ -269,11 +269,11 @@ outlier_table <- outlier_table %>%
 
 bind_rows(merged_table %>% mutate(outlier = FALSE),
           outlier_table %>% mutate(outlier = TRUE)) %>%
-  mutate()
+  mutate() %>%
   saveRDS(file = 'shiny/merged_table.rds')
 
 merged_table %>%
-  dplyr::select(where(is.character), -outlier) %>%
+  dplyr::select(where(is.character)) %>%
   colnames() %>%
   {
     .[!. %in% c("unit", "v_t_r", "cultivar")]
@@ -286,7 +286,7 @@ gc(reset = TRUE)
 
 # shiny -----
 
-merged_table <- readRDS('shiny/merged_table.rds') #For debug
-vector_of_groups <- readRDS('shiny/vector_of_groups.rds') #For debug
+# merged_table <- readRDS('shiny/merged_table.rds') #For debug
+# vector_of_groups <- readRDS('shiny/vector_of_groups.rds') #For debug
 
 shiny::runApp('shiny', launch.browser = TRUE)
