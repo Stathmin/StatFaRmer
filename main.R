@@ -267,9 +267,9 @@ outlier_table <- outlier_table %>%
 
 # exports -----
 
-bind_rows(merged_table %>% mutate(outlier = FALSE),
-          outlier_table %>% mutate(outlier = TRUE)) %>%
-  mutate() %>%
+dplyr::bind_rows(merged_table %>% dplyr::mutate(outlier = FALSE),
+          outlier_table %>% dplyr::mutate(outlier = TRUE)) %>%
+  dplyr::mutate() %>%
   saveRDS(file = 'shiny/merged_table.rds')
 
 merged_table %>%
