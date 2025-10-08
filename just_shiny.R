@@ -1,1 +1,1 @@
-shiny::runApp('shiny', launch.browser = TRUE)
+shiny/app.R

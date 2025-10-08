@@ -11,56 +11,70 @@ StatFaRmer aims to replicate methods from [(Schmidt et al., 2023)](https://www.s
 
 ## Features
 
-![Shiny Interface](src/screenshot.png)
+### Master Wizard (Data Processing)
+![Master Wizard Interface](docs/StatFaRmer%20—%20Master%20Wizard.png)
+- Project validation and preprocessing
+- DBSCAN clustering and outlier detection
+- Data transformation and technical aggregation
 
-- *Initial Data Processing*: clustering timestamps using DBSCAN, filtering out outliers within clusters based on a 3-sigma or IQR threshold, transforming percentages with logit, and merging data tables for further analysis.
-- *ANOVA Analysis*: The ANOVA automatically incorporates all user-selected factors and their interactions, up to two-way. Results come with diagnostics to help determine whether to revisit outlier removal or proceed further. The Tukey factors feature highlights which contrasts to investigate within the ANOVA.
-- *dbscan_cluster*: This feature serves as a substitute for timestamp data, enabling time-based faceting and factor selection in the analysis.
-- *Data Subsetting*: Given grouping factor, selected treatments, selected cultivar and selected time clusters options, it is possible to test specific hypotheses for the selected trait.
-- *Table Download*: In StatFaRmer Shiny App, all tables can be easily downloaded after applying filters and subsets (via the Download Full Results button).
-- *Facet Syntax*: The facet syntax aligns with R formula principles. You can position variables from the grouping factors list on either side of ~ to create vertically or horizontally distinct subplots; using *~ .* removes faceting.
+### Main Application (Statistical Analysis)
+![Main Application Interface](docs/StatFaRmer%20—%20App.png)
+- Automatic ANOVA and mixed-effects modeling
+- Interactive visualizations and export capabilities
+- Specialized modules for effect sizes and growth summaries
 
-## Installation and Use
-Ensure you have R and Git installed. You can download R from [CRAN](https://cran.r-project.org/) and Git from [the official Git website](https://git-scm.com/).
+## Quick Start
 
-To install StatFaRmer, run these commands in your terminal:
-
-- clone the project with this line in terminal:
+### Installation
+1. Clone the project:
 ```bash
 git clone https://github.com/Stathmin/StatFaRmer
-```
-- to install the project and its environment, run:
-```bash
 cd StatFaRmer
-Rscript install.R
 ```
-After installation:
 
-- the initial run of main.R processes tables, creates necessary files and launches the Shiny app:
+2. Install dependencies:
 ```bash
-Rscript main.R
+# Ubuntu/Debian: Install system dependencies
+sudo apt update && sudo apt install r-base r-base-dev git libcurl4-openssl-dev libssl-dev libxml2-dev libfontconfig1-dev libcairo2-dev libharfbuzz-dev libfribidi-dev libfreetype6-dev libpng-dev libtiff5-dev libjpeg-dev libwebp-dev libnlopt-dev cmake
+
+# Windows: Download R from CRAN and Git from git-scm.com
+
+# Install R packages
+Rscript src/install.R
 ```
-- you can later start the Shiny app separately with:
+
+### Running StatFaRmer
 ```bash
-Rscript just_shiny.R
+# Launch the Master Wizard (recommended for new projects)
+Rscript launch_statfarmer.R wizard
+
+# Or launch directly to main app
+Rscript launch_statfarmer.R app
 ```
 
-## Running Example on Windows/Linux with RStudio:
+## Documentation
 
-- Open "StatFaRmer.Rproj" in [RStudio](https://posit.co/download/rstudio-desktop/).
-- Execute the "install.R" script by clicking the "Source" button.
-- Launch the "main.R" application using RStudio's interface.
-- Upon closing the StatFaRmer web page, terminate its execution in RStudio by pressing "ESC".
-- Optionally, for rapid data processing repetition in the current project post-initial "main.R" run, directly run "just_shiny.R".
+- **[Master Wizard User Guide](docs/wizard_guide.md)** - Data preparation, validation, and preprocessing
+- **[Main Application User Guide](docs/app_guide.md)** - Statistical analysis and visualization
+- **[Statistical Methods Reference](docs/common_guide.md)** - Technical details on model selection and analysis
 
-## Customization
-Users can upload their own projects to the data folder of StatFaRmer as long as their project adheres to the following conventions (see example - *project_NO3*):
+## Project Setup
 
-- Includes an initial archived (.zip with .csv) TraitFinder experiment
-- Includes a *_handmade.csv table with mandatory *V.T.R*, *Treatment* (overrides Treatments in initial table), and *Cultivar* columns
-- Includes a *_translation.csv table with mandatory *V.T.R* and *T:X:Y* columns. *V.T.R* stands for variety, treatment and repetition, and should represent an id of biological sample. *T:X:Y* corresponds to spatial localization of the sample, should match *unit* column of initial experiment
-- *Optionally* includes a groups.xlsx table with a mandatory *cultivar* column. Other columns can be used as ANOVA factors and should consist solely of Roman letters, digits, and underscores to ensure the proper functioning of "multcompView::multcompLetters4".
+### Required Files
+Create a project folder in `data/project_NAME/` with these files:
 
-Any additional columns from the last three tables are preserved and accessible for analysis as factors.
+- **`experiment_data.zip`**: TraitFinder experiment archive (.zip containing .csv files)
+- **`project_NAME_handmade.csv`**: Metadata with columns `V.T.R`, `Treatment`, `Cultivar`
+- **`project_NAME_translation.csv`**: Spatial mapping with columns `V.T.R`, `T:X:Y`
+- **`groups.xlsx`** (optional): Additional factors with `cultivar` column
 
-The user then can modify *project*, *hours_eps* and *use_IQR* variables at *main.R, lines 11-14* according to their project name, frequency of repeated measurements/table switches and preferred outlier removal method.
+### Key Requirements
+- **V.T.R format**: `variety.treatment.repetition` (e.g., `12.3.1`)
+- **T:X:Y format**: `tray:x:y` coordinates matching `unit` column in experiment data
+- **Factor names**: Use only Roman letters, digits, and underscores for ANOVA compatibility
+
+### Processing Workflow
+Use the Master Wizard to validate, configure parameters, and process your data. See the [Master Wizard User Guide](docs/wizard_guide.md) for detailed instructions.
+
+### Security & Deployment
+For production deployment and security considerations, see [Security Deployment Guide](docs/security_deployment.md) (planned).
