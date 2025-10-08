@@ -1,0 +1,73 @@
+{
+  "metadata": {
+    "generated_by": "StatFaRmer Master Wizard",
+    "generated_at": "2025-10-08 05:20:21.378811",
+    "project": "project_NO3"
+  },
+  "processing_parameters": {
+    "hours_eps": 3,
+    "use_iqr": true,
+    "use_logit": false,
+    "logit_treat_inf": false,
+    "tech_agg": "mean",
+    "iqr_factors": "dbscan_cluster",
+    "facet_formula": "~ ."
+  },
+  "outlier_settings": {
+    "outlier_clusters": ["1", "2", "3", "23", "10", "17", "19", "36", "35", "8", "13", "15", "18", "12", "5", "6", "9", "11"],
+    "outlier_method": "keep",
+    "outlier_detection": "zscore"
+  },
+  "outlier_detection": {
+    "outlier_detection_method": "zscore",
+    "outlier_detection_factors": "dbscan_cluster",
+    "outlier_detection_variables": ["digital_biomass_mm3", "greenness_average", "greenness_bin0_percent", "greenness_bin1_percent", "greenness_bin2_percent", "greenness_bin3_percent", "greenness_bin4_percent", "greenness_bin5_percent", "height_mm", "height_max_mm", "hue_average", "hue_bin0_percent", "hue_bin1_percent", "hue_bin2_percent", "hue_bin3_percent", "hue_bin4_percent", "hue_bin5_percent", "leaf_angle", "leaf_area_mm2", "leaf_area_index_mm2_mm2", "leaf_area_projected_mm2", "leaf_inclination_mm2_mm2", "light_penetration_depth_mm", "ndvi_average", "ndvi_bin0_percent", "ndvi_bin1_percent", "ndvi_bin2_percent", "ndvi_bin3_percent", "ndvi_bin4_percent", "ndvi_bin5_percent", "npci_average", "npci_bin0_percent", "npci_bin1_percent", "npci_bin2_percent", "npci_bin3_percent", "npci_bin4_percent", "npci_bin5_percent", "psri_average", "psri_bin0_percent", "psri_bin1_percent", "psri_bin2_percent", "psri_bin3_percent", "psri_bin4_percent", "psri_bin5_percent"],
+    "total_outliers_detected": 45411,
+    "outliers_by_variable": {
+      "digital_biomass_mm3": 907,
+      "greenness_average": 857,
+      "greenness_bin0_percent": 1302,
+      "greenness_bin1_percent": 1575,
+      "greenness_bin2_percent": 914,
+      "greenness_bin3_percent": 903,
+      "greenness_bin4_percent": 1536,
+      "greenness_bin5_percent": 0,
+      "height_mm": 904,
+      "height_max_mm": 1365,
+      "hue_average": 1053,
+      "hue_bin0_percent": 1230,
+      "hue_bin1_percent": 1020,
+      "hue_bin2_percent": 863,
+      "hue_bin3_percent": 1226,
+      "hue_bin4_percent": 845,
+      "hue_bin5_percent": 0,
+      "leaf_angle": 1181,
+      "leaf_area_mm2": 1300,
+      "leaf_area_index_mm2_mm2": 1298,
+      "leaf_area_projected_mm2": 1388,
+      "leaf_inclination_mm2_mm2": 738,
+      "light_penetration_depth_mm": 1246,
+      "ndvi_average": 725,
+      "ndvi_bin0_percent": 1788,
+      "ndvi_bin1_percent": 1993,
+      "ndvi_bin2_percent": 1128,
+      "ndvi_bin3_percent": 649,
+      "ndvi_bin4_percent": 1353,
+      "ndvi_bin5_percent": 0,
+      "npci_average": 614,
+      "npci_bin0_percent": 1229,
+      "npci_bin1_percent": 1679,
+      "npci_bin2_percent": 783,
+      "npci_bin3_percent": 753,
+      "npci_bin4_percent": 1443,
+      "npci_bin5_percent": 0,
+      "psri_average": 949,
+      "psri_bin0_percent": 1447,
+      "psri_bin1_percent": 1496,
+      "psri_bin2_percent": 785,
+      "psri_bin3_percent": 699,
+      "psri_bin4_percent": 738,
+      "psri_bin5_percent": 1509
+    }
+  }
+}

@@ -1,4 +1,26 @@
-.Rproj.user
+# R temporary files
 .Rhistory
 .RData
 .Ruserdata
+.Rproj.user/
+
+# Logs and cache directory
+logs/
+
+# R package build files (not data archives)
+*.tar.gz
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.temp
+
+# R plots (auto-generated)
+Rplots.pdf

@@ -1,0 +1,21 @@
+{
+  "metadata": {
+    "generated_by": "StatFaRmer Master Wizard",
+    "generated_at": "2025-10-08 02:58:54.593889",
+    "project": "project_soy_2024-05"
+  },
+  "processing_parameters": {
+    "hours_eps": 4,
+    "use_iqr": false,
+    "use_logit": false,
+    "logit_treat_inf": true,
+    "tech_agg": "mean",
+    "iqr_factors": ["treatment", "dbscan_cluster"],
+    "facet_formula": "~ ."
+  },
+  "outlier_settings": {
+    "outlier_clusters": "3",
+    "outlier_method": "winsorize",
+    "outlier_detection": "iqr"
+  }
+}
