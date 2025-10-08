@@ -1,8 +1,5 @@
-# R temporary files
-.Rhistory
-.RData
-.Ruserdata
-.Rproj.user/
+# Ignore ALL dot files and directories
+.*
 
 # Logs and cache directory
 logs/
@@ -10,17 +7,14 @@ logs/
 # R package build files (not data archives)
 *.tar.gz
 
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE files
-.vscode/
-.idea/
-
 # Temporary files
 *.tmp
 *.temp
 
 # R plots (auto-generated)
 Rplots.pdf
+
+# Ignore all data projects EXCEPT the two we want to keep
+data/*
+!data/project_NO3/
+!data/project_soy_2024-05/
