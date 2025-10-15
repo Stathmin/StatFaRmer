@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Auth when using R from the browser</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Auth when using R from the browser</h1>
+
+
+
+<p>If you are working with R in a web-based context, such as <a href="https://posit.co/download/rstudio-server/">RStudio Server</a>, <a href="https://posit.cloud/">Posit Cloud</a>, <a href="https://posit.co/products/enterprise/workbench/">Posit
+Workbench</a>, or <a href="https://colab.research.google.com/">Google
+Colaboratory</a>, your experience of browser-based auth flows will be
+different from those using R on their local machine. You need to use
+<strong>out-of-band authentication</strong>, sometimes denoted “oob” or
+“OOB”. After the usual auth dance, instead of seeing “authentication
+successful, return to R!”, you are presented with an authorization code
+to copy and paste back into your R session. For folks who are running R
+on their local machine, this final exchange can be done automagically,
+using a temporary local webserver, but that is not possible for those
+accessing a remote R session through the browser.</p>
+<p>On February 16, 2022, Google announced the (partial) deprecation of
+the OAuth out-of-band (OOB) flow, to be enacted no later than February
+1, 2023. The deprecation applies to Google Cloud Platform (GCP) projects
+that are in production mode. OOB still works for projects that are in
+testing mode.</p>
+<p>The built-in tidyverse client (used by googledrive, googlesheets4,
+and bigrquery) is associated with a GCP project that is in production
+mode. Therefore, conventional OOB auth stopped working for the built-in
+client in February 2023. In anticipation of this, gargle gained a new
+auth flow in version 1.3.0 that we call “pseudo-OOB”, which should allow
+casual users to continue to enjoy a low-friction auth experience, even
+from RStudio Server, Posit Cloud, Posit Workbench, and Google
+Colaboratory.</p>
+<p>If you attempt to do conventional OOB auth with a client that no
+longer supports it, you’ll see something like this:</p>
+<div class="figure">
+&lt;img src=“invalid_request.png” alt=“Screenshot with the following
+text:”Access blocked: Tidyverse API Packages’s request is invalid”, “You
+can’t sign in because Tidyverse API Packages sent an invalid request.
+You can try again later, or contact the developer about this issue.
+Learn more about this error”, “If you are a developer of Tidyverse API
+Packages, see error details.”, “Error 400: invalid_request”.”
+width=“400px” /&gt;
+<p class="caption">
+Access blocked: Tidyverse API Packages’s request is invalid. Error 400:
+invalid_request
+</p>
+</div>
+<p>If you work on any of the affected platforms and are experiencing new
+auth problems, your first move should be to update all packages involved
+(gargle and one or more of googledrive, googlesheets4, bigrquery).
+<strong>Restart R.</strong> Re-execute your code in an interactive
+context that will allow you to re-auth.</p>
+<p>This vignette documents various matters around OOB auth, both
+conventional and pseudo-OOB, for users who want to understand this more
+deeply.</p>
+<p>Some of the packages that use gargle for auth and for which this
+article applies:</p>
+<ul>
+<li><a href="https://bigrquery.r-dbi.org">bigrquery</a></li>
+<li><a href="https://googledrive.tidyverse.org">googledrive</a></li>
+<li><a href="https://googlesheets4.tidyverse.org">googlesheets4</a></li>
+<li><a href="https://gmailr.r-lib.org">gmailr</a> <em>note: gmailr does
+not use the built-in tidyverse OAuth client</em></li>
+</ul>
+<div id="consider-using-a-service-account-token-or-no-token" class="section level2">
+<h2>Consider using a service account token (or no token!)</h2>
+<p>If you have concerns about using OOB auth, consider whether your task
+truly requires auth as a specific, normal user.</p>
+<p>Can the task be completed with <em>no auth</em>, i.e. you are
+accessing something that is world readable or readable for “anyone with
+a link”? In that case, the wrapper package probably provides a function
+to go into a de-authorized state, such as
+<code>googledrive::drive_deauth()</code> or
+<code>googlesheets4::gs4_deauth()</code>.</p>
+<p>If the task requires auth, consider whether it really must be as a
+specific user. You may be able to accomplish the task with a service
+account, which you create for this specific purpose. A service account
+token is much easier to work with on a server and in non-interactive
+contexts than a user token. A service account can also be given much
+more selective permissions than a user account and can be more easily
+deleted, once it is no longer needed. Remember that the service account
+will need to be explicitly given permission to access any necessary
+resources (e.g. permission to read or write a specific Drive file or
+Sheet). A service account doesn’t somehow inherit permissions indirectly
+from the user who owns the GCP project in which it lives. To learn more
+about using a service account, see
+<code>vignette(&quot;non-interactive-auth&quot;)</code>.</p>
+</div>
+<div id="when-and-how-to-use-oob" class="section level2">
+<h2>When and how to use OOB</h2>
+<p>In the absence of any user instructions, the function
+<code>gargle::gargle_oob_default()</code> is used to decide whether to
+use OOB auth. By default, OOB auth is used on RStudio Server, Posit
+Cloud, Posit Workbench, and Google Colaboratory, or if the option
+<code>&quot;gargle_oob_default&quot;</code> is set to <code>TRUE</code>. (Note
+that we use the term “OOB auth” here to include both the existing,
+conventional form of OOB and gargle’s new pseudo-OOB.)</p>
+<p>Wrapper packages generally also allow the user to opt-in to OOB auth
+when making a direct call to an auth function. For example, the
+functions <code>googledrive::drive_auth()</code>,
+<code>googlesheets4::gs4_auth()</code>,
+<code>bigrquery::bq_auth()</code>, and <code>gmailr::gm_auth()</code>
+all have a <code>use_oob</code> argument. Notably, all of these
+<code>use_oob</code> arguments default to
+<code>gargle::gargle_oob_default()</code>.</p>
+<p>gargle usually automatically detects when it should use OOB auth, but
+here is what it could look like if we are not using OOB, but should be.
+During auth, you are redirected to localhost on port 1410 and receive an
+error along these lines:</p>
+<pre><code>Chrome: This site can&#39;t be reached; localhost refused to connect.
+Firefox: Unable to connect; can&#39;t establish a connection.</code></pre>
+<p>If this happens you might need to explicitly request OOB. Below we
+review two different methods.</p>
+</div>
+<div id="request-oob-auth-in-the-pkg_auth-call" class="section level2">
+<h2>Request OOB auth in the <code>PKG_auth()</code> call</h2>
+<p>Packages like googledrive and bigrquery aim to make auth “just work”
+for most users, i.e. it’s automatically triggered upon first need.
+However, it is always possible to initiate auth yourself, which gives
+you the opportunity to specify non-default values of certain parameters.
+Here’s how you could request OOB auth, using googledrive as an
+example:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">library</span>(googledrive)</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="fu">drive_auth</span>(<span class="at">use_oob =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="co"># now carry on with your work</span></span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="fu">drive_find</span>(<span class="at">n_max =</span> <span class="dv">5</span>)</span></code></pre></div>
+</div>
+<div id="set-the-gargle_oob_default-option" class="section level2">
+<h2>Set the <code>&quot;gargle_oob_default&quot;</code> option</h2>
+<p>If you know that you <em>always</em> want to use OOB, as a user or
+within a project, the best way to express this is to set the
+<code>&quot;gargle_oob_default&quot;</code> option.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">options</span>(<span class="at">gargle_oob_default =</span> <span class="cn">TRUE</span>)</span></code></pre></div>
+<p>This code could appear at the top of a script, in a setup chunk for
+<code>.Rmd</code>, or in a Shiny app. But it probably makes even more
+sense in a <code>.Rprofile</code> startup file, at the user or project
+level.</p>
+<p>Once the <code>&quot;gargle_oob_default&quot;</code> option has been set, it is
+honored by downstream calls to <code>PKG_auth()</code>, explicit or
+implicit, because the default value of <code>use_oob</code> is
+<code>gargle::gargle_oob_default()</code>, which consults the
+option.</p>
+</div>
+<div id="conventional-vs.-pseudo-oob-auth" class="section level2">
+<h2>Conventional vs. pseudo-OOB auth</h2>
+<p>gargle now supports two OOB flows, which we call “conventional OOB”
+(the existing, legacy OOB flow) and “pseudo-OOB” (the new flow
+introduced in response to the partial deprecation of conventional OOB).
+If we are using OOB auth, the decision between conventional or
+pseudo-OOB is made based on the currently configured OAuth client.</p>
+<ul>
+<li>If the OAuth client is of type <code>&quot;installed&quot;</code> (shows as
+“Desktop” in Google Cloud Console) or is of unknown type, gargle uses
+conventional OOB. Note that this will not necessarily succeed, due to
+the deprecation process described above.</li>
+<li>If the OAuth client is of type <code>&quot;web&quot;</code> (shows as “Web
+application” in Google Cloud Console), gargle uses the new pseudo-OOB
+flow.</li>
+</ul>
+<style>
+table {
+border-collapse: collapse;
+border-style: none;
+}
+.empty-cell {
+border: none;
+background-color: transparent;
+}
+table thead {
+background-color: transparent;
+}
+table th, table td {
+border-style: solid;
+}
+</style>
+
+
+<table>
+  <thead>
+    <tr>
+      <th class="empty-cell"></th>
+      <th class="empty-cell"></th>
+      <th colspan="2"><verb>use_oob</verb></th>
+    </tr>
+    <tr>
+      <th class="empty-cell"></th>
+      <th class="empty-cell"></th>
+      <th>FALSE</th>
+      <th>TRUE</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th rowspan="2">client type</th>
+      <th>installed</th>
+      <td>use httpuv to spin up<br> a temporary web server</td>
+      <td>conventional OOB</td>
+    </tr>
+    <tr>
+      <th>web</th>
+      <td>--not possible--</td>
+      <td>pseudo-OOB</td>
+    </tr>
+  </tbody>
+</table>
+<p>Packages that use a built-in tidyverse OAuth client (googledrive,
+googlesheets4, and bigrquery) should automatically select a “web” client
+on RStudio Server, Posit Cloud, Posit Workbench, and Google Colaboratory
+and an “installed” client otherwise. If you need to explicitly request a
+“web” client in some other setting, you can use the global option
+<code>&quot;gargle_oauth_client_type&quot;</code>:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="fu">options</span>(<span class="at">gargle_oauth_client_type =</span> <span class="st">&quot;web&quot;</span>)</span></code></pre></div>
+<p>Users who configure their own OAuth client will need to be
+intentional when choosing the client type, depending on where the code
+is running.</p>
+<p>On the R side, it is recommended to setup an OAuth client using
+<code>gargle_oauth_client_from_json()</code>, which allows the client
+type (<code>&quot;installed&quot;</code> vs. <code>&quot;web&quot;</code>) to be detected
+programmatically from the downloaded JSON. The less-preferred approach
+is to use <code>gargle_oauth_client()</code> and provide the information
+yourself.</p>
+</div>
+<div id="how-pseudo-oob-works" class="section level2">
+<h2>How pseudo-OOB works</h2>
+<p>Pseudo-OOB works just like non-OOB and conventional OOB in terms of
+the user’s interactions with Google authorization server. This is where
+the user authenticates themselves with Google and consents to the type
+of access being requested by the R code.</p>
+<p>These flows differ in how they handle a successful response from the
+authorization server. Specifically, the flows use different redirect
+URIs.</p>
+<ul>
+<li>A (temporary) local webserver is used to listen for this response
+at, e.g., <code>http://localhost:1410/</code> if R is running locally
+and the httpuv package is available (i.e. a non-OOB flow).</li>
+<li>In conventional OOB, a special redirect value is used, typically
+<code>urn:ietf:wg:oauth:2.0:oob</code>, and the authorization code is
+provided to the user via a browser window for manual copy/paste. This
+page is served by Google. Google has deprecated conventional OOB for
+projects in production mode (but it is still allowed for projects in
+testing mode).</li>
+<li>In gargle’s pseudo-OOB, a redirect URI from the configured OAuth
+client is used to receive the response. This page is responsible for
+exposing a code that the user can copy/paste, similar to conventional
+OOB (except the page is <em>not</em> served by Google). Unlike
+conventional OOB, this is not the authorization code itself, but is
+something from which the code can be extracted, along with a state token
+to mitigate cross-site request forgery. This is actually implemented
+using an <a href="https://developers.google.com/identity/protocols/oauth2/web-server">OAuth
+flow for web server applications</a>. Note that we (gargle) call this
+pseudo-OOB, but it is not technically OOB from Google’s
+point-of-view.</li>
+</ul>
+<p>The built-in OAuth client used for pseudo-OOB by tidyverse packages
+redirects to <a href="https://www.tidyverse.org/google-callback/" class="uri">https://www.tidyverse.org/google-callback/</a>. This is a
+static landing page that does not collect any data and exists solely to
+give the interactive R user a way to convey the authorization token back
+to the waiting R process and thereby complete the auth process.</p>
+<div id="more-details-about-the-deprecation-of-conventional-oob" class="section level3">
+<h3>More details about the deprecation of conventional OOB</h3>
+<p>Key links:</p>
+<ul>
+<li>Blog post: <a href="https://developers.googleblog.com/2022/02/making-oauth-flows-safer.html">Making
+Google OAuth interactions safer by using more secure OAuth
+flows</a></li>
+<li><a href="https://developers.google.com/identity/protocols/oauth2/resources/oob-migration#web-application">Out-Of-Band
+(OOB) flow Migration Guide</a></li>
+<li><a href="https://developers.google.com/identity/protocols/oauth2">Using
+OAuth 2.0 to Access Google APIs</a></li>
+</ul>
+</div>
+</div>
+<div id="but-i-didnt-need-oob-yesterday" class="section level2">
+<h2>But I didn’t need OOB yesterday!</h2>
+<p>Sometimes the usual OAuth web flow suddenly stops working for people
+working directly with R (so NOT via the browser) and they use OOB auth
+to get unstuck again. What’s going on in this case?</p>
+<p>The initial error looks something like this:</p>
+<pre><code>createTcpServer: address already in use
+Error in httpuv::startServer(use$host, use$port, list(call = listen)) :
+  Failed to create server</code></pre>
+<p>It’s characteristic of some other process sitting on port 1410, which
+is what gargle is trying to use for auth.</p>
+<p>It’s true that using OOB auth is a workaround. But OOB auth is,
+frankly, more clunky, so why use it if you don’t have to? Here are ways
+to fix this.</p>
+<ul>
+<li>Restart your system. This will almost certainly kill the offending
+process, which is usually a zombie process.</li>
+<li>Hunt down the offending process, verify it looks expendable, and
+kill it.</li>
+</ul>
+<p>On *nix-y systems, use <code>lsof</code> to get the process ID:</p>
+<pre><code>sudo lsof -i :1410</code></pre>
+<p>The output will look something like this:</p>
+<pre><code>COMMAND   PID  USER   FD   TYPE            DEVICE SIZE/OFF NODE NAME
+R       16664 jenny   20u  IPv4 0x63761a50856c65f      0t0  TCP localhost:hiq (LISTEN)</code></pre>
+<p>In this case, as is typical, this is a zombie R process and I feel
+confident killing it. The process ID is listed there as PID. Note that
+and kill the process, like so, filling in the PID you found:</p>
+<pre><code>kill -9 &lt;PID&gt;</code></pre>
+<p>So, to be clear, in this example, the command would be:</p>
+<pre><code>kill -9 16664</code></pre>
+<p>The normal, non-OOB auth web flow should work again now.</p>
+</div>
+<div id="further-reading" class="section level2">
+<h2>Further reading</h2>
+<p>If you’re working on a data product that will be deployed (for
+example on <a href="https://www.shinyapps.io">shinyapps.io</a> or <a href="https://posit.co/products/enterprise/connect/">Posit Connect</a>),
+you will also need to consider how the deployed content will
+authenticate non-interactively, which is covered in
+<code>vignette(&quot;non-interactive-auth&quot;)</code>.</p>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

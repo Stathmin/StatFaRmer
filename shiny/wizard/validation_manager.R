@@ -19,12 +19,34 @@ wizardValidateProject <- function(proj, state, session) {
     return(FALSE)
   }
   
-  proj_path <- here('data', proj)
-  if (!dir.exists(proj_path)) {
-    logError(paste('Project folder does not exist:', proj_path))
-    state$append_validation(paste('ERROR: folder not found -', proj_path))
-    state$validated(FALSE)
-    return(FALSE)
+  # Normalize project: accept folder name or absolute path; strip trailing slashes
+  proj <- sub('/+$', '', proj)
+  if (grepl('^/', proj)) {
+    proj_path <- proj
+    if (!dir.exists(proj_path)) {
+      logError(paste('Project folder does not exist:', proj_path))
+      state$append_validation(paste('ERROR: folder not found -', proj_path))
+      state$validated(FALSE)
+      return(FALSE)
+    }
+    # Reduce to folder name under data for downstream cache paths
+    data_root <- here('data')
+    if (startsWith(normalizePath(proj_path, winslash = '/'), normalizePath(data_root, winslash = '/'))) {
+      proj <- basename(proj_path)
+    } else {
+      logError(paste('Project outside data/:', proj_path))
+      state$append_validation(paste('ERROR: project must be under', data_root))
+      state$validated(FALSE)
+      return(FALSE)
+    }
+  } else {
+    proj_path <- here('data', proj)
+    if (!dir.exists(proj_path)) {
+      logError(paste('Project folder does not exist:', proj_path))
+      state$append_validation(paste('ERROR: folder not found -', proj_path))
+      state$validated(FALSE)
+      return(FALSE)
+    }
   }
   
   # Use real project validation
@@ -335,6 +357,8 @@ createRawCache <- function(proj, state) {
   
   ok <- TRUE
   tryCatch({
+    # Ensure latest minimal_preprocess is loaded (Shiny may hold stale definition)
+    try(suppressWarnings(source(here('shiny', 'wizard', 'minimal_preprocess.R'))), silent = TRUE)
     raw_paths <- minimalPreprocess(proj)
     logEvent('INFO', 'master.raw.available', list(project = proj, raw = raw_paths))
     state$append_validation(

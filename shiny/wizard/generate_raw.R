@@ -228,4 +228,12 @@ if (!"message" %in% names(summary_stats)) {
   gc(reset = TRUE)
 }
 
-# Function is now called externally - no automatic execution
+# Check if project_name variable is set and call the function
+if (exists('project_name') && nzchar(project_name)) {
+  cat("🚀 Starting raw data generation for project:", project_name, "\n")
+  generateRawData(project_name)
+  cat("✅ Raw data generation completed for project:", project_name, "\n")
+} else {
+  cat("ℹ️ project_name variable not set. Function defined but not executed.\n")
+  cat("   To execute: project_name <- 'your_project' then source this file.\n")
+}

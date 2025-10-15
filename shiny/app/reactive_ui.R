@@ -17,19 +17,28 @@ createReactiveUI <- function(input, output, session, combined_inputs, projectUIS
       selections <- withBenchmark('Shiny:UI:UpdateSelections', projectUISelections())
       logEvent('INFO', 'ui.project_changed', list(project = input$selected_project))
       
-      # Update ANOVA factors
-      updateSelectInput(session, 'anova_factors', 
-                       choices = setdiff(selections$anova_factors, 'unit'),
-                       selected = intersect(c('treatment', 'dbscan_cluster'), setdiff(selections$anova_factors, 'unit')))
+      # Update ANOVA factors (preserve current user order if available)
+      anova_choices <- setdiff(selections$anova_factors, 'unit')
+      current_anova <- isolate(input$anova_factors)
+      anova_selected <- intersect(current_anova, anova_choices)
+      if (length(anova_selected) == 0) {
+        # Fallback to a sensible default but keep displayed order from choices
+        anova_selected <- intersect(anova_choices, c('treatment','dbscan_cluster'))
+      }
+      updateSelectInput(session, 'anova_factors', choices = anova_choices, selected = anova_selected)
+
+      # Update Tukey factors (preserve current user order if available)
+      tukey_choices <- setdiff(selections$anova_factors, 'unit')
+      current_tukey <- isolate(input$tukey_factors)
+      tukey_selected <- intersect(current_tukey, tukey_choices)
+      if (length(tukey_selected) == 0) {
+        tukey_selected <- intersect(tukey_choices, c('treatment','dbscan_cluster'))
+      }
+      updateSelectInput(session, 'tukey_factors', choices = tukey_choices, selected = tukey_selected)
       
-      # Update Tukey factors
-      updateSelectInput(session, 'tukey_factors', 
-                       choices = setdiff(selections$anova_factors, 'unit'),
-                       selected = intersect(c('treatment', 'dbscan_cluster'), setdiff(selections$anova_factors, 'unit')))
-      
-      # Update color by
+      # Update color by (hide Group Letter)
       updateSelectInput(session, 'color_by', 
-                       choices = c(setdiff(selections$anova_factors, 'unit'), 'Group Letter' = 'group_letter'),
+                       choices = setdiff(selections$anova_factors, 'unit'), #'Group Letter' = 'group_letter' is hidden
                        selected = if ('treatment' %in% selections$anova_factors) 'treatment' else setdiff(selections$anova_factors, 'unit')[1])
       
       # Update grouping factor
@@ -76,9 +85,9 @@ createReactiveUI <- function(input, output, session, combined_inputs, projectUIS
     }, priority = 100)
   }
   
-  # Update factor levels when grouping factor changes
+  # Update factor levels when grouping factor or project changes
   updateFactorLevels <- function(projectData) {
-    observeEvent(input$factor_grouping, {
+    observeEvent(list(input$factor_grouping, input$selected_project), {
       current_data <- projectData()
       if (nrow(current_data$merged_table) > 0) {
         unique_groups <- getUnique(current_data$merged_table, input$factor_grouping)
@@ -102,12 +111,15 @@ createReactiveUI <- function(input, output, session, combined_inputs, projectUIS
           )
         }
       }
-    }, ignoreInit = FALSE, priority = 100)
+    }, ignoreInit = FALSE, priority = 200)
   }
   
   # Update cultivars when factor levels change
   updateCultivars <- function(projectData) {
     observeEvent(c(input$factor_levels, input$factor_grouping), {
+      # Avoid clearing cultivars while factor_levels is being reset during project change
+      req(!is.null(input$factor_grouping))
+      req(length(input$factor_levels) > 0)
       current_data <- projectData()
       if (nrow(current_data$merged_table) > 0) {
         unique_cultivars <- current_data$merged_table %>%
@@ -168,8 +180,8 @@ createReactiveUI <- function(input, output, session, combined_inputs, projectUIS
         },
         out_variables = isolate(input$out_variables),
         facet_formula = isolate(as.formula(input$facet_formula)),
-        anova_factors = isolate(sort(input$anova_factors)),
-        tukey_factors = isolate(sort(input$tukey_factors)),
+        anova_factors = isolate(input$anova_factors),
+        tukey_factors = isolate(input$tukey_factors),
         timeseries_plot = isolate(input$timeseries_plot),
         outliers_plot = isolate(input$outliers_plot)
       )
@@ -242,8 +254,8 @@ createReactiveUI <- function(input, output, session, combined_inputs, projectUIS
       }
       combined_inputs$out_variables = isolate(input$out_variables)
       combined_inputs$facet_formula = isolate(as.formula(input$facet_formula))
-      combined_inputs$anova_factors = isolate(sort(input$anova_factors))
-      combined_inputs$tukey_factors = isolate(sort(input$tukey_factors))
+      combined_inputs$anova_factors = isolate(input$anova_factors)
+      combined_inputs$tukey_factors = isolate(input$tukey_factors)
       combined_inputs$timeseries_plot = isolate(input$timeseries_plot)
       combined_inputs$outliers_plot = isolate(input$outliers_plot)
     }, priority = 50)

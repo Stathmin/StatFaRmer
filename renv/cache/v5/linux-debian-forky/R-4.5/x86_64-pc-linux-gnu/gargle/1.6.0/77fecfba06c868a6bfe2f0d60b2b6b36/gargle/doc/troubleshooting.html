@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Troubleshooting gargle auth</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Troubleshooting gargle auth</h1>
+
+
+
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(gargle)</span></code></pre></div>
+<div id="gargle_verbosity-option" class="section level2">
+<h2><code>&quot;gargle_verbosity&quot;</code> option</h2>
+<p>There is a package-wide option that controls gargle’s verbosity:
+<code>&quot;gargle_verbosity&quot;</code>. The function
+<code>gargle_verbosity()</code> reveals the current value:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">gargle_verbosity</span>()</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="co">#&gt; [1] &quot;info&quot;</span></span></code></pre></div>
+<p>It defaults to <code>&quot;info&quot;</code>, which is fairly quiet. This is
+because gargle is designed to try a bunch of auth methods (many of which
+will fail) and persist doggedly until one succeeds. If none succeeds,
+gargle tries to guide the user through auth or, in a non-interactive
+session, it throws an error.</p>
+<p>If you need to see all those gory details, set the
+<code>&quot;gargle_verbosity&quot;</code> option to <code>&quot;debug&quot;</code> and
+you’ll get much more output as gargle works through various auth
+approaches. It is <strong>normal</strong> to see lots of errors, as
+gargle tries various auth methods in succession, most of which will
+often fail.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="co"># save current value</span></span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>op <span class="ot">&lt;-</span> <span class="fu">options</span>(<span class="at">gargle_verbosity =</span> <span class="st">&quot;debug&quot;</span>)</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="fu">gargle_verbosity</span>()</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt; [1] &quot;debug&quot;</span></span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a></span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a><span class="co"># restore original value</span></span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a><span class="fu">options</span>(op)</span></code></pre></div>
+<p>Note there are also withr-style helpers:
+<code>with_gargle_verbosity()</code> and
+<code>local_gargle_verbosity()</code>.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="fu">gargle_verbosity</span>()</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="co">#&gt; [1] &quot;info&quot;</span></span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="fu">with_gargle_verbosity</span>(</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>  <span class="st">&quot;debug&quot;</span>,</span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>  <span class="fu">gargle_verbosity</span>()</span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a>)</span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="co">#&gt; [1] &quot;debug&quot;</span></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a></span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="fu">gargle_verbosity</span>()</span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="co">#&gt; [1] &quot;info&quot;</span></span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a></span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a>f <span class="ot">&lt;-</span> <span class="cf">function</span>() {</span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a>  <span class="fu">local_gargle_verbosity</span>(<span class="st">&quot;debug&quot;</span>)</span>
+<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a>  <span class="fu">gargle_verbosity</span>()</span>
+<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a>}</span>
+<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a></span>
+<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a><span class="fu">f</span>()</span>
+<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a><span class="co">#&gt; [1] &quot;debug&quot;</span></span>
+<span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a></span>
+<span id="cb4-21"><a href="#cb4-21" tabindex="-1"></a><span class="fu">gargle_verbosity</span>()</span>
+<span id="cb4-22"><a href="#cb4-22" tabindex="-1"></a><span class="co">#&gt; [1] &quot;info&quot;</span></span></code></pre></div>
+</div>
+<div id="gargle_oauth_sitrep" class="section level2">
+<h2><code>gargle_oauth_sitrep()</code></h2>
+<p><code>gargle_oauth_sitrep()</code> provides an OAuth2 “situation
+report”.</p>
+<p><code>gargle_oauth_sitrep()</code> is only relevant to OAuth2 user
+tokens. If you are using (or struggling to use) a service account token,
+workload identity federation, Application Default Credentials, or
+credentials from the GCE metadata service,
+<code>gargle_oauth_sitrep()</code> isn’t going to help you figure out
+what’s going on.</p>
+<p>Here is indicative output of <code>gargle_oauth_sitrep()</code>, for
+someone who has accepted the default OAuth cache location and has played
+with several APIs via gargle-using packages.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="fu">gargle_oauth_sitrep</span>()</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="co">#&#39; &gt; 14 tokens found in this gargle OAuth cache:</span></span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="co">#&#39; &#39;~/Library/Caches/gargle&#39;</span></span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="co">#&#39; </span></span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a><span class="co">#&#39; email                         app         scope                          hash...   </span></span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a><span class="co">#&#39; ----------------------------- ----------- ------------------------------ ----------</span></span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="co">#&#39; abcdefghijklm@gmail.com       thingy      ...bigquery, ...cloud-platform 128f9cc...</span></span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a><span class="co">#&#39; buzzy@example.org             gargle-demo                                15acf95...</span></span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a><span class="co">#&#39; stella@example.org            gargle-demo ...drive                       4281945...</span></span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a><span class="co">#&#39; abcdefghijklm@gmail.com       gargle-demo ...drive                       48e7e76...</span></span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a><span class="co">#&#39; abcdefghijklm@gmail.com       tidyverse                                  69a7353...</span></span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a><span class="co">#&#39; nopqr@ABCDEFG.com             tidyverse   ...spreadsheets.readonly       86a70b9...</span></span>
+<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="co">#&#39; abcdefghijklm@gmail.com       tidyverse   ...drive                       d9443db...</span></span>
+<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a><span class="co">#&#39; nopqr@HIJKLMN.com             tidyverse   ...drive                       d9443db...</span></span>
+<span id="cb5-15"><a href="#cb5-15" tabindex="-1"></a><span class="co">#&#39; nopqr@ABCDEFG.com             tidyverse   ...drive                       d9443db...</span></span>
+<span id="cb5-16"><a href="#cb5-16" tabindex="-1"></a><span class="co">#&#39; stuvwzyzabcd@gmail.com        tidyverse   ...drive                       d9443db...</span></span>
+<span id="cb5-17"><a href="#cb5-17" tabindex="-1"></a><span class="co">#&#39; efghijklmnopqrtsuvw@gmail.com tidyverse   ...drive                       d9443db...</span></span>
+<span id="cb5-18"><a href="#cb5-18" tabindex="-1"></a><span class="co">#&#39; abcdefghijklm@gmail.com       tidyverse   ...drive.readonly              ecd11fa...</span></span>
+<span id="cb5-19"><a href="#cb5-19" tabindex="-1"></a><span class="co">#&#39; abcdefghijklm@gmail.com       tidyverse   ...bigquery, ...cloud-platform ece63f4...</span></span>
+<span id="cb5-20"><a href="#cb5-20" tabindex="-1"></a><span class="co">#&#39; nopqr@ABCDEFG.com             tidyverse   ...spreadsheets                f178dd8...</span></span></code></pre></div>
+<p>It is relatively harmless to delete the folder serving as the OAuth
+cache. Or, if you have reason to believe one specific cached token is
+causing you pain, you could delete a specific token (an
+<code>.rds</code> file) from the cache. OAuth user tokens are meant to
+be perishable and replaceable.</p>
+<p>If you choose to delete your cache (or a specific token), here is the
+fallout you can expect:</p>
+<ul>
+<li>You will need to re-auth (usually, meaning the browser dance) in
+projects that have been using the deleted tokens.</li>
+<li>If you have <code>.R</code> or <code>.Rmd</code> files that you
+execute or render non-interactively, presumably with code such as
+<code>PKG_auth(email = &quot;janedoe@example.com&quot;)</code>, those won’t run
+non-interactively until you’ve obtained and cached a token for the
+package and that identity (email) interactively once.</li>
+</ul>
+</div>
+<div id="why-do-good-tokens-go-bad" class="section level2">
+<h2>Why do good tokens go bad?</h2>
+<p>Sometimes it feels like auth was working and then suddenly it stops
+working. If you’ve cached a token and used it successfully, why would it
+stop working?</p>
+<div id="too-many-tokens" class="section level3">
+<h3>Too many tokens</h3>
+<p>An existing token can go bad if you’ve created too many Google
+tokens, causing your oldest tokens to “fall off the edge”.</p>
+<p>A specific Google user (email) can only have a certain number of
+OAuth tokens at a time (something like 50 per OAuth client). So,
+whenever you get a new token (as opposed to refreshing an existing
+token), there is the potential for it to invalidate an older token. This
+is unlikely to be an issue for a casual user, but it can absolutely
+become noticeable for someone who is developing against a Google API or
+someone working from many different machines / caches.</p>
+<p>Another reason that an existing token stops working is if it was
+obtained with an OAuth client that is in “testing” mode. Refresh tokens
+obtained that way only last for one week, whereas it’s more typical for
+refresh tokens to last almost indefinitely (or, at least, for several
+months).</p>
+</div>
+<div id="credential-rolling" class="section level3">
+<h3>Credential rolling</h3>
+<p>Many users of packages like googlesheets4 or googledrive tacitly rely
+on the default OAuth client used by those packages. Periodically the
+maintainer of such a package will need to roll the client, i.e. create a
+new OAuth client and disable the old one. This will make it impossible
+to refresh existing tokens, made with the old, disabled client Those
+tokens will stop working.</p>
+<p><em>In gargle v1.0.0, in March 2021, we rolled the client used in
+googlesheets4, googledrive, and bigrquery. We reserve the right to
+disable the old client at any time. Anyone relying on the default client
+will have to upgrade.</em></p>
+<p>The solution is to update the package in question,
+e.g. googlesheets4:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="fu">install.packages</span>(<span class="st">&quot;googlesheets4&quot;</span>)</span></code></pre></div>
+<p><strong>Restart R!</strong> Resume your work. Chances are you’ll be
+prompted to re-auth with the new client and you’ll be back in
+business.</p>
+<p>What does this problem look like in the wild?</p>
+<p>With gargle versions up to v1.0.0, you will probably see this:</p>
+<pre><code>Auto-refreshing stale OAuth token.
+Error in get(&quot;refresh_oauth2.0&quot;, asNamespace(&quot;httr&quot;))(self$endpoint, self$app,  :
+  Unauthorized (HTTP 401).</code></pre>
+<p>If you’re trying to create a token, instead of refreshing one, you
+might see this in the browser, while R is waiting to receive input:</p>
+<pre><code>Google Authorization Error
+
+Error 401: deleted_client
+The OAuth client was deleted.</code></pre>
+<p>It might look something like this:</p>
+<p>&lt;img src=“deleted_client.png” alt=“Screenshot with the following
+text:”Google”, “Authorization Error”, “Error 401: deleted_client”, “The
+OAuth client was deleted.”” width=“400px” /&gt;</p>
+<p>As of gargle version v1.1.0, we’re trying harder to recognize this
+specific problem and to provide a more detailed and actionable error
+message:</p>
+<pre><code>Auto-refreshing stale OAuth token.
+Error: Client error: (401) UNAUTHENTICATED
+  * Request not authenticated due to missing, invalid, or expired OAuth token.
+  * Request had invalid authentication credentials. Expected OAuth 2 access token, login cookie or other valid authentication credential. See https://developers.google.com/identity/sign-in/web/devconsole-project.
+Run `rlang::last_error()` to see where the error occurred.
+In addition: Warning message:
+Unable to refresh token, because the associated OAuth app has been deleted
+* You appear to be relying on the default app used by the googlesheets4 package
+* Consider re-installing googlesheets4 and gargle, in case the default app has been updated</code></pre>
+</div>
+</div>
+<div id="how-to-avoid-auth-pain" class="section level2">
+<h2>How to avoid auth pain</h2>
+<p>If you have rigged some remote mission critical thing (e.g. a Shiny
+app or cron job) to use a cached user OAuth token, one day, one of the
+problems described above will happen and your mission critical token
+will stop working. Your thing (e.g. the Shiny app or cron job) will
+mysteriously fail because the OAuth token can’t be refreshed and a new
+token can’t be obtained in a non-interactive setting. This is why cached
+user tokens are a poor fit for such applications.</p>
+<p>If you choose to use a cached user token anyway, be prepared to deal
+with this headache periodically. (You may not have much of a choice if
+you are using, for example, the gmailr package to work with the Gmail
+API, which has limited support for service accounts.) Consider using
+your own OAuth client to eliminate your exposure to a third-party
+deciding to roll their client. Be prepared to generate a fresh token
+interactively and upload it to the token cache consulted by your remote
+mission critical thing. Better yet, upgrade to a more robust strategy
+for <a href="https://gargle.r-lib.org/articles/non-interactive-auth.html">non-interactive
+auth</a>, such as a service account token.</p>
+</div>
+<div id="how-to-inspect-the-last-response" class="section level2">
+<h2>How to inspect the last response</h2>
+<p>By default, <code>gargle::response_process()</code> stores the most
+recently processed response in an internal environment. You can access
+this response with the nonexported helper
+<code>gargle:::gargle_last_response()</code>. Prior to storage, a few
+parts of the response are redacted or deleted, such as the access token
+and the handle. These are either sensitive (the token) or useless (the
+handle) and they have more downside than upside for downstream debugging
+use.</p>
+<p>Here’s an example of accessing the most recent response and writing
+it to file, which could be shared with someone else for debugging. The
+response is in this example has HTTP status 200, i.e. it is not an
+error. But this process works the same even if in the case of an error,
+e.g. an HTTP status &gt;= 400.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="fu">library</span>(gargle)</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a></span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>req <span class="ot">&lt;-</span> <span class="fu">request_build</span>(</span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;GET&quot;</span>,</span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  <span class="at">path =</span> <span class="st">&quot;webfonts/v1/webfonts&quot;</span>,</span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>  <span class="at">params =</span> <span class="fu">list</span>(</span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a>    <span class="at">sort =</span> <span class="st">&quot;popularity&quot;</span></span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a>  ),</span>
+<span id="cb10-9"><a href="#cb10-9" tabindex="-1"></a>  <span class="at">key =</span> <span class="fu">gargle_api_key</span>(),</span>
+<span id="cb10-10"><a href="#cb10-10" tabindex="-1"></a>  <span class="at">base_url =</span> <span class="st">&quot;https://www.googleapis.com&quot;</span></span>
+<span id="cb10-11"><a href="#cb10-11" tabindex="-1"></a>)</span>
+<span id="cb10-12"><a href="#cb10-12" tabindex="-1"></a>resp <span class="ot">&lt;-</span> <span class="fu">request_make</span>(req)</span>
+<span id="cb10-13"><a href="#cb10-13" tabindex="-1"></a>out <span class="ot">&lt;-</span> <span class="fu">response_process</span>(resp)</span>
+<span id="cb10-14"><a href="#cb10-14" tabindex="-1"></a></span>
+<span id="cb10-15"><a href="#cb10-15" tabindex="-1"></a>lr <span class="ot">&lt;-</span> gargle<span class="sc">:::</span><span class="fu">gargle_last_response</span>()</span>
+<span id="cb10-16"><a href="#cb10-16" tabindex="-1"></a>tmp <span class="ot">&lt;-</span> <span class="fu">tempfile</span>(<span class="st">&quot;gargle-last-response-&quot;</span>)</span>
+<span id="cb10-17"><a href="#cb10-17" tabindex="-1"></a><span class="fu">saveRDS</span>(lr, tmp)</span>
+<span id="cb10-18"><a href="#cb10-18" tabindex="-1"></a><span class="co"># you could share this .rds file with a colleague or the gargle maintainer</span></span>
+<span id="cb10-19"><a href="#cb10-19" tabindex="-1"></a></span>
+<span id="cb10-20"><a href="#cb10-20" tabindex="-1"></a><span class="co"># how it would look to complete the round trip, i.e. load this on the other end</span></span>
+<span id="cb10-21"><a href="#cb10-21" tabindex="-1"></a>rt_lr <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(tmp)</span>
+<span id="cb10-22"><a href="#cb10-22" tabindex="-1"></a></span>
+<span id="cb10-23"><a href="#cb10-23" tabindex="-1"></a><span class="fu">all.equal</span>(lr, rt_lr)</span>
+<span id="cb10-24"><a href="#cb10-24" tabindex="-1"></a><span class="co">#&gt; [1] TRUE</span></span>
+<span id="cb10-25"><a href="#cb10-25" tabindex="-1"></a></span>
+<span id="cb10-26"><a href="#cb10-26" tabindex="-1"></a><span class="co"># clean up</span></span>
+<span id="cb10-27"><a href="#cb10-27" tabindex="-1"></a><span class="fu">unlink</span>(<span class="st">&quot;tmp&quot;</span>)</span></code></pre></div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

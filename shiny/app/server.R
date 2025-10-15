@@ -33,6 +33,12 @@ thematic::thematic_shiny()
 source(here('shiny', 'common', 'utils.R'))
 source(here('shiny', 'common', 'stats.R'))
 source(here('shiny', 'common', 'plotting.R'))
+source(here('shiny', 'common', 'letters_emmeans.R'))
+source(here('shiny', 'common', 'letters_pvals.R'))
+source(here('shiny', 'common', 'letters_normalize.R'))
+source(here('shiny', 'common', 'tukey_filter.R'))
+source(here('shiny', 'common', 'letters_join.R'))
+source(here('shiny', 'common', 'letters_utils.R'))
 
 # Ensure benchmarking and logging are available in server/env
 source(here('src', 'benchmark.R'))
@@ -121,13 +127,14 @@ server <- function(input, output, session) {
   # Create reactive output functions
   reactive_outputs <- createReactiveOutputs(input, output, session, combined_inputs, filteredData, projectData)
   analysisResults <- reactive_outputs$analysisResults
+  descriptiveStats <- reactive_outputs$descriptiveStats
   
   # =============================================================================
   # REACTIVE DOWNLOADS
   # =============================================================================
   
   # Create reactive download functions
-  createReactiveDownloads(input, output, session, combined_inputs, filteredData, analysisResults)
+  createReactiveDownloads(input, output, session, combined_inputs, filteredData, analysisResults, descriptiveStats)
   
   # =============================================================================
   # SCIENTIFIC MODULES

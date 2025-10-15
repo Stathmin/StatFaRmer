@@ -25,6 +25,8 @@ minimalPreprocess <- function(project) {
   logEvent('INFO', 'minimal.generate.raw', list(project = project))
   project_root <- here::here()
   generate_raw_path <- file.path(project_root, 'shiny', 'wizard', 'generate_raw.R')
+  # Log resolved paths for diagnostics (use INFO so it appears by default)
+  logEvent('INFO', 'minimal.generate.raw.paths', list(project_root = project_root, script = generate_raw_path))
   
   if (!file.exists(generate_raw_path)) {
     logError('generate_raw.R not found')
@@ -35,31 +37,61 @@ minimalPreprocess <- function(project) {
   temp_script <- tempfile(fileext = '.R')
   script_content <- sprintf("
 setwd('%s')
-if (file.exists('%s')) source('%s')
-Sys.setenv(PROJECT_NAME='%s')
 source('%s')
-", project_root, file.path(project_root, 'renv', 'activate.R'), file.path(project_root, 'renv', 'activate.R'), project, generate_raw_path)
+generateRawData('%s')
+", project_root, generate_raw_path, project)
   writeLines(script_content, temp_script)
+  logEvent('INFO', 'minimal.generate.raw.script', list(script_path = temp_script, content = script_content))
   
+  # Preserve current library paths for the child so required packages are available without renv activation
+  child_libs <- .libPaths()
   status <- tryCatch({
-    system2('Rscript', args = temp_script, stdout = TRUE, stderr = TRUE)
+    system2('Rscript', args = temp_script, stdout = TRUE, stderr = TRUE, wd = project_root, env = c(paste0('R_LIBS=', paste(child_libs, collapse=':'))))
   }, error = function(e) {
     logError(paste('minimal.fallback.main.failed', e$message)); return(NA)
   }, finally = {
     unlink(temp_script)
   })
+  exit_status <- tryCatch(attr(status, 'status'), error = function(e) NULL)
   if (length(status) == 0 || any(is.na(status))) {
     logError('minimal.generate.raw.failed.na_status')
-  } else {
-    logEvent('DEBUG', 'minimal.generate.raw.output', list(output = paste(status, collapse='\n')))
+  }
+  logEvent('INFO', 'minimal.generate.raw.child_status', list(exit_status = ifelse(is.null(exit_status), 'NULL', as.character(exit_status))))
+  if (length(status) > 0 && !any(is.na(status))) {
+    logEvent('INFO', 'minimal.generate.raw.output', list(output = paste(status, collapse='\n')))
   }
   
   # Re-check project outputs
-  ok <- file.exists(here::here('data', project, paste0(project, '_raw_merged_table.rds'))) &&
-        file.exists(here::here('data', project, paste0(project, '_raw_vector_of_groups.rds')))
+  raw_merged_path <- here::here('data', project, paste0(project, '_raw_merged_table.rds'))
+  raw_groups_path <- here::here('data', project, paste0(project, '_raw_vector_of_groups.rds'))
+  raw_merged_exists <- file.exists(raw_merged_path)
+  raw_groups_exists <- file.exists(raw_groups_path)
+  ok <- raw_merged_exists && raw_groups_exists
   if (!isTRUE(ok)) {
-    stop('Minimal preprocess: generate_raw.R failed to create raw cache files')
+    logEvent('ERROR', 'minimal.generate.raw.outputs_missing', list(
+      raw_merged = raw_merged_path,
+      raw_groups = raw_groups_path,
+      exists_merged = raw_merged_exists,
+      exists_groups = raw_groups_exists
+    ))
+    # Fallback: try generating inline in current R session to avoid child env issues
+    logEvent('WARN', 'minimal.generate.raw.inline_fallback.start', list(project = project))
+    try({
+      # Source into an isolated environment to avoid rm(list=ls()) nuking app symbols
+      isolated_env <- new.env(parent = emptyenv())
+      sys.source(generate_raw_path, envir = isolated_env)
+      isolated_env$generateRawData(project)
+    }, silent = TRUE)
+    raw_merged_exists <- file.exists(raw_merged_path)
+    raw_groups_exists <- file.exists(raw_groups_path)
+    ok <- raw_merged_exists && raw_groups_exists
+    logEvent(if (ok) 'INFO' else 'ERROR', 'minimal.generate.raw.inline_fallback.done', list(
+      ok = ok,
+      exists_merged = raw_merged_exists,
+      exists_groups = raw_groups_exists
+    ))
   }
+  if (!isTRUE(ok)) stop('Minimal preprocess: generate_raw.R failed to create raw cache files')
 
   # Raw cache files are already in the correct location from generate_raw.R
   # No copying needed since generate_raw.R creates the _raw_ files directly

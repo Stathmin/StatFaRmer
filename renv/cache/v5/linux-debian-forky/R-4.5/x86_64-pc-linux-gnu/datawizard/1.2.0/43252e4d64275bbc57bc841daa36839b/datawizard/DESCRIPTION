@@ -1,0 +1,37 @@
+Type: Package
+Package: datawizard
+Title: Easy Data Wrangling and Statistical Transformations
+Version: 1.2.0
+Authors@R: c( person("Indrajeet", "Patil", , "patilindrajeet.science@gmail.com", role = "aut", comment = c(ORCID = "0000-0003-1995-6531")), person("Etienne", "Bacher", , "etienne.bacher@protonmail.com", role = c("aut", "cre"), comment = c(ORCID = "0000-0002-9271-5075")), person("Dominique", "Makowski", , "dom.makowski@gmail.com", role = "aut", comment = c(ORCID = "0000-0001-5375-9967")), person("Daniel", "Lüdecke", , "d.luedecke@uke.de", role = "aut", comment = c(ORCID = "0000-0002-8895-3206")), person("Mattan S.", "Ben-Shachar", , "matanshm@post.bgu.ac.il", role = "aut", comment = c(ORCID = "0000-0002-4287-4801")), person("Brenton M.", "Wiernik", , "brenton@wiernik.org", role = "aut", comment = c(ORCID = "0000-0001-9560-6336")), person("Rémi", "Thériault", , "remi.theriault@mail.mcgill.ca", role = "ctb", comment = c(ORCID = "0000-0003-4315-6788")), person("Thomas J.", "Faulkenberry", , "faulkenberry@tarleton.edu", role = "rev"), person("Robert", "Garrett", , "rcg4@illinois.edu", role = "rev") )
+Maintainer: Etienne Bacher <etienne.bacher@protonmail.com>
+Description: A lightweight package to assist in key steps involved in any data analysis workflow: (1) wrangling the raw data to get it in the needed form, (2) applying preprocessing steps and statistical transformations, and (3) compute statistical summaries of data properties and distributions. It is also the data wrangling backend for packages in 'easystats' ecosystem. References: Patil et al. (2022) <doi:10.21105/joss.04684>.
+License: MIT + file LICENSE
+URL: https://easystats.github.io/datawizard/
+BugReports: https://github.com/easystats/datawizard/issues
+Depends: R (>= 4.0)
+Imports: insight (>= 1.3.1), stats, utils
+Suggests: bayestestR, boot, BH, brms, curl, data.table, dplyr (>= 1.1),
+    effectsize, emmeans, gamm4, ggplot2 (>= 3.5.0), gt, haven, httr, knitr,
+    lme4, mediation, modelbased, nanoparquet, parameters (>= 0.21.7),
+    performance (>= 0.14.0), poorman (>= 0.2.7), psych, readxl, readr, rio,
+    rmarkdown, rstanarm, see, testthat (>= 3.2.1), tibble, tidyr, withr
+VignetteBuilder: knitr
+Encoding: UTF-8
+Language: en-US
+RoxygenNote: 7.3.2
+Config/testthat/edition: 3
+Config/testthat/parallel: true
+Config/Needs/website: easystats/easystatstemplate
+NeedsCompilation: no
+Packaged: 2025-07-17 11:33:03 UTC; etienne
+Author: Indrajeet Patil [aut] (ORCID: <https://orcid.org/0000-0003-1995-6531>), Etienne Bacher [aut, cre] (ORCID: <https://orcid.org/0000-0002-9271-5075>), Dominique Makowski [aut] (ORCID: <https://orcid.org/0000-0001-5375-9967>), Daniel Lüdecke [aut] (ORCID: <https://orcid.org/0000-0002-8895-3206>), Mattan S. Ben-Shachar [aut] (ORCID: <https://orcid.org/0000-0002-4287-4801>), Brenton M. Wiernik [aut] (ORCID: <https://orcid.org/0000-0001-9560-6336>), Rémi Thériault [ctb] (ORCID: <https://orcid.org/0000-0003-4315-6788>), Thomas J. Faulkenberry [rev], Robert Garrett [rev]
+Repository: CRAN
+Date/Publication: 2025-07-17 12:10:02 UTC
+Built: R 4.5.1; ; 2025-10-09 12:27:47 UTC; unix
+RemoteType: standard
+RemoteRef: datawizard
+RemotePkgRef: datawizard
+RemoteRepos: https://cloud.r-project.org
+RemoteReposName: CRAN
+RemotePkgPlatform: source
+RemoteSha: 1.2.0

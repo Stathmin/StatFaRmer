@@ -1,0 +1,42 @@
+Type: Package
+Package: bayestestR
+Title: Understand and Describe Bayesian Models and Posterior Distributions
+Version: 0.17.0
+Authors@R: c(person(given = "Dominique", family = "Makowski", role = c("aut", "cre"), email = "officialeasystats@gmail.com", comment = c(ORCID = "0000-0001-5375-9967")), person(given = "Daniel", family = "Lüdecke", role = "aut", email = "d.luedecke@uke.de", comment = c(ORCID = "0000-0002-8895-3206")), person(given = "Mattan S.", family = "Ben-Shachar", role = "aut", email = "matanshm@post.bgu.ac.il", comment = c(ORCID = "0000-0002-4287-4801")), person(given = "Indrajeet", family = "Patil", role = "aut", email = "patilindrajeet.science@gmail.com", comment = c(ORCID = "0000-0003-1995-6531")), person(given = "Micah K.", family = "Wilson", role = "aut", email = "micah.k.wilson@curtin.edu.au", comment = c(ORCID = "0000-0003-4143-7308")), person(given = "Brenton M.", family = "Wiernik", role = "aut", email = "brenton@wiernik.org", comment = c(ORCID = "0000-0001-9560-6336")), person(given = "Paul-Christian", family = "Bürkner", role = "rev", email = "paul.buerkner@gmail.com"), person(given = "Tristan", family = "Mahr", role = "rev", email = "tristan.mahr@wisc.edu", comment = c(ORCID = "0000-0002-8890-5116")), person(given = "Henrik", family = "Singmann", role = "ctb", email = "singmann@gmail.com", comment = c(ORCID = "0000-0002-4842-3657")), person(given = "Quentin F.", family = "Gronau", role = "ctb", comment = c(ORCID = "0000-0001-5510-6943")), person(given = "Sam", family = "Crawley", role = "ctb", email = "sam@crawley.nz", comment = c(ORCID = "0000-0002-7847-0411")))
+Maintainer: Dominique Makowski <officialeasystats@gmail.com>
+Description: Provides utilities to describe posterior distributions and Bayesian models. It includes point-estimates such as Maximum A Posteriori (MAP), measures of dispersion (Highest Density Interval - HDI; Kruschke, 2015 <doi:10.1016/C2012-0-00477-2>) and indices used for null-hypothesis testing (such as ROPE percentage, pd and Bayes factors). References: Makowski et al. (2021) <doi:10.21105/joss.01541>.
+Depends: R (>= 3.6)
+Imports: insight (>= 1.4.1), datawizard (>= 1.2.0), graphics, methods, stats,
+    utils
+Suggests: BayesFactor (>= 0.9.12-4.4), bayesQR, bayesplot, betareg, BH,
+    blavaan, bridgesampling, brms, collapse, curl, effectsize, emmeans, gamm4,
+    ggdist, ggplot2, glmmTMB, httr2, KernSmooth, knitr, lavaan, lme4, logspline
+    (>= 2.1.21), marginaleffects (>= 0.29.0), MASS, mclust, mediation,
+    modelbased, ordbetareg, parameters, patchwork, performance, posterior,
+    quadprog, RcppEigen, rmarkdown, rstan, rstanarm, see (>= 0.8.5), testthat,
+    tinytable, tweedie, withr
+License: GPL-3
+URL: https://easystats.github.io/bayestestR/
+BugReports: https://github.com/easystats/bayestestR/issues
+VignetteBuilder: knitr
+Encoding: UTF-8
+Language: en-US
+RoxygenNote: 7.3.2
+Config/testthat/edition: 3
+Config/testthat/parallel: true
+Config/rcmdcheck/ignore-inconsequential-notes: true
+Config/Needs/website: easystats/easystatstemplate
+Config/Needs/check: stan-dev/cmdstanr
+NeedsCompilation: no
+Packaged: 2025-08-29 11:10:27 UTC; Daniel
+Author: Dominique Makowski [aut, cre] (ORCID: <https://orcid.org/0000-0001-5375-9967>), Daniel Lüdecke [aut] (ORCID: <https://orcid.org/0000-0002-8895-3206>), Mattan S. Ben-Shachar [aut] (ORCID: <https://orcid.org/0000-0002-4287-4801>), Indrajeet Patil [aut] (ORCID: <https://orcid.org/0000-0003-1995-6531>), Micah K. Wilson [aut] (ORCID: <https://orcid.org/0000-0003-4143-7308>), Brenton M. Wiernik [aut] (ORCID: <https://orcid.org/0000-0001-9560-6336>), Paul-Christian Bürkner [rev], Tristan Mahr [rev] (ORCID: <https://orcid.org/0000-0002-8890-5116>), Henrik Singmann [ctb] (ORCID: <https://orcid.org/0000-0002-4842-3657>), Quentin F. Gronau [ctb] (ORCID: <https://orcid.org/0000-0001-5510-6943>), Sam Crawley [ctb] (ORCID: <https://orcid.org/0000-0002-7847-0411>)
+Repository: CRAN
+Date/Publication: 2025-08-29 15:10:07 UTC
+Built: R 4.5.1; ; 2025-10-09 12:27:52 UTC; unix
+RemoteType: standard
+RemoteRef: bayestestR
+RemotePkgRef: bayestestR
+RemoteRepos: https://cloud.r-project.org
+RemoteReposName: CRAN
+RemotePkgPlatform: source
+RemoteSha: 0.17.0

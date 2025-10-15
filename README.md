@@ -35,7 +35,7 @@ cd StatFaRmer
 2. Install dependencies:
 ```bash
 # Ubuntu/Debian: Install system dependencies
-sudo apt update && sudo apt install r-base r-base-dev git libcurl4-openssl-dev libssl-dev libxml2-dev libfontconfig1-dev libcairo2-dev libharfbuzz-dev libfribidi-dev libfreetype6-dev libpng-dev libtiff5-dev libjpeg-dev libwebp-dev libnlopt-dev cmake
+sudo apt update && sudo apt install r-base r-base-dev git libcurl4-openssl-dev libssl-dev libxml2-dev libfontconfig1-dev libcairo2-dev libharfbuzz-dev libfribidi-dev libfreetype6-dev libpng-dev libtiff5-dev libjpeg-dev libwebp-dev libnlopt-dev libxml2 libxml2-dev cmake
 
 # Windows: Download R from CRAN and Git from git-scm.com
 

@@ -187,9 +187,21 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
       data_to_plot$group_letter <- NA_character_
       
       cat("DEBUG: Adding group letters. Tukey factors:", paste(names(tukey_results), collapse=", "), "\n")
+
+      # Respect user-selected factor order when joining letters
+      ordered_factors <- tryCatch({
+        if (!is.null(combined_inputs$anova_factors)) {
+          intersect(as.character(combined_inputs$anova_factors), names(tukey_results))
+        } else names(tukey_results)
+      }, error = function(e) names(tukey_results))
+      # When coloring by Group Letter, restrict to MAIN comparison only (first selected factor)
+      if (!is.null(input$color_by) && identical(input$color_by, 'group_letter')) {
+        if (length(ordered_factors) > 1) ordered_factors <- ordered_factors[1]
+      }
       
-      # Join letters from all Tukey factors
-      for (factor_name in names(tukey_results)) {
+      created_temp_cols <- character(0)
+      # Join letters from all Tukey factors in the selected order
+      for (factor_name in ordered_factors) {
         letters_df <- tukey_results[[factor_name]]$letters
         cat("DEBUG: Factor", factor_name, "- letters_df rows:", nrow(letters_df), 
             "- in data:", factor_name %in% names(data_to_plot), "\n")
@@ -206,31 +218,59 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
             letters_df$group <- as.character(letters_df$group)
           }
           
-          # Create temporary column for this factor's letters
+          # Build join key and join letters using helper functions
           temp_col <- paste0("_", factor_name, "_letter")
-          data_to_plot <- data_to_plot %>%
-            left_join(letters_df, by = setNames("group", factor_name)) %>%
-            mutate(!!temp_col := letter) %>%
-            select(-letter)
+          # If two Tukey factors were selected, letters may include a stratum column; pass it for join
+          by_names <- intersect(names(letters_df), names(data_to_plot))
+          by_names <- setdiff(by_names, c('group', factor_name))
+          jl <- joinLettersToData(data_to_plot, letters_df, factor_name, byNames = by_names)
+          data_to_plot <- jl$df
+          # Track created temp column
+          created_temp_cols <- c(created_temp_cols, paste0('_', factor_name, '_letter'))
           
           cat("DEBUG: After join, temp_col", temp_col, "has", sum(!is.na(data_to_plot[[temp_col]])), "non-NA values\n")
         }
       }
       
-      # Combine all letters into group_letter
-      letter_cols <- names(data_to_plot)[grepl("^_[^_]+_letter$", names(data_to_plot))]
+      # Combine all letters into group_letter honoring selected factor order
+      cat("DEBUG: names(data_to_plot) after joins =", paste(names(data_to_plot), collapse=", "), "\n")
+      temp_cols_in_df <- names(data_to_plot)[grepl("^_[^_]+_letter$", names(data_to_plot))]
+      expected_temp_cols <- paste0("_", ordered_factors, "_letter")
+      # Prefer the actually created temp columns but order by expected factors
+      created_temp_cols <- unique(created_temp_cols)
+      letter_cols <- intersect(expected_temp_cols, intersect(temp_cols_in_df, created_temp_cols))
+      if (length(letter_cols) == 0L && length(temp_cols_in_df) > 0L) {
+        # Fallback to any detected temp cols (ordered by expected list)
+        letter_cols <- intersect(expected_temp_cols, temp_cols_in_df)
+      }
+      
+      cat("DEBUG: temp_cols_in_df =", paste(temp_cols_in_df, collapse=", "), "\n")
+      cat("DEBUG: expected_temp_cols =", paste(expected_temp_cols, collapse=", "), "\n")
+      cat("DEBUG: letter_cols =", paste(letter_cols, collapse=", "), "\n")
+      
       if (length(letter_cols) > 0) {
-        data_to_plot$group_letter <- apply(data_to_plot[letter_cols], 1, function(row) {
-          non_na_letters <- row[!is.na(row)]
-          if (length(non_na_letters) > 0) {
-            paste(non_na_letters, collapse = "")
-          } else {
-            NA_character_
-          }
-        })
+        if (length(letter_cols) == 1) {
+          # Single factor: just copy the letter column
+          cat("DEBUG: Single factor case, copying", letter_cols[1], "\n")
+          data_to_plot$group_letter <- data_to_plot[[letter_cols[1]]]
+          cat("DEBUG: After copy, group_letter sample =", paste(head(data_to_plot$group_letter, 3), collapse=", "), "\n")
+        } else {
+          # Multiple factors: concatenate letters
+          cat("DEBUG: Multiple factors case, concatenating", paste(letter_cols, collapse=", "), "\n")
+          data_to_plot$group_letter <- apply(data_to_plot[letter_cols], 1, function(row) {
+            non_na_letters <- row[!is.na(row)]
+            if (length(non_na_letters) > 0) {
+              paste(non_na_letters, collapse = "")
+            } else {
+              NA_character_
+            }
+          })
+        }
         
-        # Clean up temporary columns
-        data_to_plot <- data_to_plot %>% select(-all_of(letter_cols))
+        # Clean up temporary columns without relying on dplyr select semantics
+        for (col in letter_cols) {
+          if (col %in% names(data_to_plot)) data_to_plot[[col]] <- NULL
+        }
       }
       
       cat("DEBUG: Final group_letter - NAs:", sum(is.na(data_to_plot$group_letter)), "/ Total:", nrow(data_to_plot), "\n")
@@ -379,41 +419,26 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
   })
   
   # Descriptive statistics
-  output$DescriptiveTable <- DT::renderDataTable({
+  descriptiveStats <- reactive({
     req(filteredData())
     req(combined_inputs$out_variables)
     req(combined_inputs$anova_factors)
     
-    # Calculate descriptive statistics independently of ANOVA
     tryCatch({
       data <- filteredData()
       out_var <- combined_inputs$out_variables
       factors <- combined_inputs$anova_factors
       
-      cat("DEBUG DescriptiveTable: calculating desc stats for", out_var, "by", paste(factors, collapse=", "), "\n")
-      cat("DEBUG DescriptiveTable: data nrows =", nrow(data), "\n")
-      cat("DEBUG DescriptiveTable: testing e1071::skewness on sample data...\n")
-      test_data <- c(1, 2, 3, 4, 5)
-      if (requireNamespace("e1071", quietly = TRUE)) {
-        test_skew <- tryCatch(e1071::skewness(test_data, type = 2), error = function(e) paste("ERROR:", e$message))
-        cat("DEBUG DescriptiveTable: e1071 test result =", test_skew, "\n")
-      } else {
-        cat("DEBUG DescriptiveTable: e1071 not available\n")
-      }
-      
-      # Check if all required columns exist
+      # Validate columns
       if (!out_var %in% names(data)) {
-        cat("DEBUG DescriptiveTable: ERROR - out_var", out_var, "not in data\n")
         return(data.frame(Message = paste("Variable", out_var, "not found in data")))
       }
-      
       missing_factors <- factors[!factors %in% names(data)]
       if (length(missing_factors) > 0) {
-        cat("DEBUG DescriptiveTable: ERROR - factors", paste(missing_factors, collapse=", "), "not in data\n")
         return(data.frame(Message = paste("Factors", paste(missing_factors, collapse=", "), "not found in data")))
       }
       
-      # Calculate descriptive statistics
+      # Core descriptive stats
       desc_stats <- data %>%
         dplyr::group_by(dplyr::across(dplyr::all_of(factors))) %>%
         dplyr::summarise(
@@ -427,45 +452,35 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
           q25 = quantile(.data[[out_var]], 0.25, na.rm = TRUE),
           q75 = quantile(.data[[out_var]], 0.75, na.rm = TRUE),
           iqr = q75 - q25,
-          cv = (sd / mean) * 100,  # Coefficient of variation (%)
+          cv = (sd / mean) * 100,
           .groups = 'drop'
         )
       
-      # Add skewness and kurtosis using a simpler approach
+      # Skewness and kurtosis
       desc_stats$skewness <- NA_real_
       desc_stats$kurtosis <- NA_real_
-      
-      # Calculate skewness and kurtosis for each group
       for (i in 1:nrow(desc_stats)) {
-        # Get the group values
         group_data <- data
         for (factor in factors) {
           group_data <- group_data[group_data[[factor]] == desc_stats[[factor]][i], ]
         }
-        
         x <- group_data[[out_var]][!is.na(group_data[[out_var]])]
-        
-        if (length(x) > 2) {
+        if (length(x) > 2 && requireNamespace("e1071", quietly = TRUE)) {
           desc_stats$skewness[i] <- e1071::skewness(x, type = 2)
         }
-        if (length(x) > 3) {
+        if (length(x) > 3 && requireNamespace("e1071", quietly = TRUE)) {
           desc_stats$kurtosis[i] <- e1071::kurtosis(x, type = 2)
         }
       }
       
-      cat("DEBUG DescriptiveTable: calculated", nrow(desc_stats), "rows of desc stats\n")
-      cat("DEBUG DescriptiveTable: checking packages - e1071:", requireNamespace("e1071", quietly = TRUE), 
-          ", moments:", requireNamespace("moments", quietly = TRUE), "\n")
-      
-      # Apply precision formatting
-      desc_stats <- desc_stats %>%
-        mutate(dplyr::across(tidyselect::where(is.numeric), ~signif(., 3)))
-      
-      return(desc_stats)
+      desc_stats %>% mutate(dplyr::across(tidyselect::where(is.numeric), ~signif(., 3)))
     }, error = function(e) {
-      cat("DEBUG DescriptiveTable: ERROR =", e$message, "\n")
-      return(data.frame(Message = paste("Error calculating descriptive statistics:", e$message)))
+      data.frame(Message = paste("Error calculating descriptive statistics:", e$message))
     })
+  })
+
+  output$DescriptiveTable <- DT::renderDataTable({
+    descriptiveStats()
   }, options = list(pageLength = 10, scrollX = TRUE))
   
   # ANOVA results
@@ -545,31 +560,46 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
       tukey_results <- analysisResults()$tukey$results
       cat("DEBUG tukeyLetters: number of factors =", length(tukey_results), "\n")
       cat("DEBUG tukeyLetters: factor names =", paste(names(tukey_results), collapse=", "), "\n")
-      
-      # Combine all group letters into one table
-      all_letters <- data.frame()
-      for (factor_name in names(tukey_results)) {
-        factor_letters <- tukey_results[[factor_name]]$letters
-        cat("DEBUG tukeyLetters: factor", factor_name, "letters is.null =", is.null(factor_letters), 
-            "nrow =", if (!is.null(factor_letters)) nrow(factor_letters) else NA, "\n")
-        
-        if (!is.null(factor_letters)) {
-          cat("DEBUG tukeyLetters: factor", factor_name, "letters structure:\n")
-          print(str(factor_letters))
-        }
-        
-        if (!is.null(factor_letters) && nrow(factor_letters) > 0) {
-          factor_letters$factor <- factor_name
-          all_letters <- rbind(all_letters, factor_letters)
-        }
+
+      # Select only MAIN comparison: first factor in user-selected order (fall back to first available)
+      tukey_factors <- names(tukey_results)
+      main_factor <- {
+        sel <- tryCatch(as.character(combined_inputs$anova_factors), error = function(e) character(0))
+        sel <- intersect(sel, tukey_factors)
+        if (length(sel) > 0) sel[1] else tukey_factors[1]
       }
-      
-      cat("DEBUG tukeyLetters: total rows in all_letters =", nrow(all_letters), "\n")
-      
-      if (nrow(all_letters) > 0) {
-        return(all_letters)
-      } else {
+      other_by <- setdiff(tukey_factors, main_factor)
+      factor_letters <- tukey_results[[main_factor]]$letters
+      if (is.null(factor_letters) || nrow(factor_letters) == 0) {
         return(data.frame(Message = "No group letters available"))
+      }
+      factor_letters$factor <- main_factor
+      # Merge emmeans for main factor by remaining strata (if present)
+      tryCatch({
+        emm <- emmeans::emmeans(analysisResults()$anova$model, specs = main_factor, by = other_by)
+        emm_df <- as.data.frame(emm)
+        if (nrow(emm_df) > 0 && 'emmean' %in% names(emm_df)) {
+          emm_df$group <- as.character(emm_df[[main_factor]])
+          keep_cols <- c('group', 'emmean', other_by)
+          keep_cols <- keep_cols[keep_cols %in% names(emm_df)]
+          emm_df <- emm_df[, keep_cols, drop = FALSE]
+          factor_letters <- merge(factor_letters, emm_df, by = intersect(names(factor_letters), names(emm_df)), all.x = TRUE)
+        }
+      }, error = function(e) {
+        cat('DEBUG: Could not merge emmeans into group letters:', e$message, '\n')
+      })
+      # Format emmean similar to other tables
+      if ('emmean' %in% names(factor_letters)) factor_letters$emmean <- signif(factor_letters$emmean, 3)
+      # Column order: group, letter, strata..., factor, emmean (when present)
+      beaut_cols <- unique(c('group','letter', other_by, 'factor', 'emmean'))
+      beaut_cols <- beaut_cols[beaut_cols %in% names(factor_letters)]
+      out_tbl <- factor_letters[, beaut_cols, drop = FALSE]
+
+      cat('DEBUG tukeyLetters: main_factor =', main_factor, ' rows =', nrow(out_tbl), '\n')
+      if (nrow(out_tbl) > 0 && !lettersAreBlank(out_tbl)) {
+        return(out_tbl)
+      } else {
+        return(data.frame(Message = "Pairwise letters unavailable (all p-values NA). Try different factor or check model fit."))
       }
     } else {
       return(data.frame(Message = "No group letters available"))
@@ -913,6 +943,7 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
   })
   
   return(list(
-    analysisResults = analysisResults
+    analysisResults = analysisResults,
+    descriptiveStats = descriptiveStats
   ))
 }

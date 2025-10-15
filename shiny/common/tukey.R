@@ -10,7 +10,8 @@ library(multcompView)
 performTukey <- function(anova_model, tukey_factors) {
   tryCatch({
     use_emmeans <- requireNamespace('emmeans', quietly = TRUE)
-    tukey_results <- list()
+    # Preserve user order in the returned list
+    tukey_results <- structure(list(), .Names = character(0))
     for (factor in tukey_factors) {
       if (use_emmeans) {
         is_lmer <- inherits(anova_model, 'lmerMod')
@@ -33,11 +34,21 @@ performTukey <- function(anova_model, tukey_factors) {
           trms <- attr(terms(anova_model), 'term.labels')
           other <- setdiff(trms, factor)
         }
-        if (length(other) > 0) {
-          spec_str <- paste(factor, '|', paste(other, collapse = ' + '))
-          emm <- emmeans::emmeans(anova_model, as.formula(paste('~', spec_str)))
+        # For each Tukey factor, compute emmeans with other Tukey factors as strata (by)
+        by_vars <- setdiff(tukey_factors, factor)
+        # Build emmeans with better df method for lmer to avoid NA p-values
+        if (length(by_vars) > 0) {
+          if (is_lmer) {
+            emm <- emmeans::emmeans(anova_model, specs = factor, by = by_vars, lmer.df = 'satterthwaite')
+          } else {
+            emm <- emmeans::emmeans(anova_model, specs = factor, by = by_vars)
+          }
         } else {
-          emm <- emmeans::emmeans(anova_model, as.formula(paste('~', factor)))
+          if (is_lmer) {
+            emm <- emmeans::emmeans(anova_model, specs = factor, lmer.df = 'satterthwaite')
+          } else {
+            emm <- emmeans::emmeans(anova_model, specs = factor)
+          }
         }
         pw <- emmeans::contrast(emm, method = 'pairwise', adjust = 'tukey')
         pw_df <- as.data.frame(pw)
@@ -57,35 +68,66 @@ performTukey <- function(anova_model, tukey_factors) {
         if (!'p.adj' %in% names(pw_df)) {
           if ('p.value' %in% names(pw_df)) pw_df$p.adj <- pw_df$p.value
         }
-        cld_df <- tryCatch({
-          pvals <- setNames(pw_df$p.adj, pw_df$contrast)
-          letters_result <- multcompView::multcompLetters(pvals)
-          factor_levels <- as.character(unique(summary(emm)[[factor]]))
-          letters_names <- names(letters_result$Letters)
-          letters_names <- trimws(letters_names)
-          stripped_names <- sub(paste0('^', factor, '(.*)$'), '\\1', letters_names)
-          names(letters_result$Letters) <- stripped_names
-          letters_vec <- letters_result$Letters[factor_levels]
-          data.frame(group = factor_levels, letter = as.character(letters_vec), stringsAsFactors = FALSE)
-        }, error = function(e) {
-          data.frame(group = character(0), letter = character(0))
-        })
+        # Build CLD via helpers; if blank, fallback to p-value based letters
+        cld_df <- buildEmmeansCld(emm, factor, byNames = by_vars)
+        if (is.null(cld_df) || nrow(cld_df) == 0 || lettersAreBlank(cld_df)) {
+          cld_df <- buildLettersFromPvals(pw_df, factor, byNames = by_vars)
+        }
+        # Normalize letter ordering so that 'a' corresponds to highest emmean per stratum
+        if (!is.null(cld_df) && nrow(cld_df) > 0 && !lettersAreBlank(cld_df)) {
+          cld_df <- relabelLettersByMeans(emm, factor, by_vars, cld_df)
+        }
+        # Graceful degradation: only for strata with a single level of the factor
+        if (is.null(cld_df) || nrow(cld_df) == 0 || lettersAreBlank(cld_df)) {
+          grid_df <- tryCatch(as.data.frame(emm), error = function(e) NULL)
+          if (!is.null(grid_df)) {
+            assign_list <- list()
+            if (length(by_vars) > 0) {
+              splits <- split(grid_df, grid_df[by_vars], drop = TRUE)
+            } else {
+              splits <- list(`__all__` = grid_df)
+            }
+            for (nm in names(splits)) {
+              subg <- splits[[nm]]
+              # Only assign fallback when no pairwise is possible in stratum
+              if (length(unique(as.character(subg[[factor]]))) <= 1) {
+                base <- unique(subg[, c(factor, by_vars), drop = FALSE])
+                out <- data.frame(
+                  group = as.character(base[[factor]]),
+                  letter = rep('a', nrow(base)),
+                  stringsAsFactors = FALSE
+                )
+                if (length(by_vars) > 0) {
+                  for (bn in by_vars) {
+                    if (bn %in% names(base)) out[[bn]] <- as.character(base[[bn]])
+                  }
+                }
+                assign_list[[length(assign_list) + 1]] <- out
+              }
+            }
+            if (length(assign_list) > 0) {
+              cld_df <- do.call(rbind, assign_list)
+            } else {
+              # Leave as blank to signal computation issue; do not mislead with 'a'
+              cld_df <- data.frame(group = character(0), letter = character(0), stringsAsFactors = FALSE)
+            }
+          } else {
+            cld_df <- data.frame(group = character(0), letter = character(0), stringsAsFactors = FALSE)
+          }
+        }
+        if (!is.null(cld_df) && nrow(cld_df) > 0) {
+          cld_df$group <- normalizeGroupLabels(cld_df$group, factor)
+        }
         tukey_results[[factor]] <- list(test = pw, results = pw_df, letters = cld_df)
       } else {
         tukey_test <- TukeyHSD(anova_model, which = factor)
         tukey_df <- as.data.frame(tukey_test[[factor]])
         tukey_df$comparison <- rownames(tukey_df)
         rownames(tukey_df) <- NULL
-        parts <- strsplit(tukey_df$comparison, '-')
-        keep_mask <- vapply(parts, function(p) {
-          if (length(p) != 2) return(FALSE)
-          lhs <- trimws(p[[1]]); rhs <- trimws(p[[2]])
-          lhs_levels <- strsplit(lhs, ':')[[1]]
-          rhs_levels <- strsplit(rhs, ':')[[1]]
-          if (length(lhs_levels) != length(rhs_levels)) return(FALSE)
-          sum(lhs_levels != rhs_levels) == 1
-        }, logical(1))
-        tukey_df <- tukey_df[keep_mask, , drop = FALSE]
+        # If too many comparisons, filter to simple differences
+        if (shouldFilterComparisons(nrow(tukey_df))) {
+          tukey_df <- filterSimpleComparisons(tukey_df)
+        }
         if (nrow(tukey_df) > 0) {
           lhs_rhs <- strsplit(tukey_df$comparison, '-')
           lhs <- vapply(lhs_rhs, function(p) trimws(p[[1]]), character(1))
@@ -98,9 +140,14 @@ performTukey <- function(anova_model, tukey_factors) {
           tukey_df$comparison <- tukey_df$comparison_pretty
         }
         tukey_letters <- generateLabelDf(tukey_test, factor)
+        if (!is.null(tukey_letters) && nrow(tukey_letters) > 0) {
+          tukey_letters$group <- normalizeGroupLabels(tukey_letters$group, factor)
+        }
         tukey_results[[factor]] <- list(test = tukey_test, results = tukey_df, letters = tukey_letters)
       }
     }
+    # Ensure the list preserves the exact order of tukey_factors
+    tukey_results <- tukey_results[tukey_factors]
     list(results = tukey_results, success = TRUE)
   }, error = function(e) {
     list(error = e$message, success = FALSE)

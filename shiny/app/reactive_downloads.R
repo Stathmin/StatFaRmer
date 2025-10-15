@@ -8,8 +8,9 @@
 #' @param combined_inputs Reactive values for combined inputs
 #' @param filteredData Reactive function for filtered data
 #' @param analysisResults Reactive function for analysis results
+#' @param descriptiveStats Reactive function for descriptive statistics table (with skewness/kurtosis)
 #' @return List of reactive functions
-createReactiveDownloads <- function(input, output, session, combined_inputs, filteredData, analysisResults) {
+createReactiveDownloads <- function(input, output, session, combined_inputs, filteredData, analysisResults, descriptiveStats) {
   
   # Download raw data (matching UI button ID)
   output$raw_flex_downloadData <- downloadHandler(
@@ -27,10 +28,12 @@ createReactiveDownloads <- function(input, output, session, combined_inputs, fil
       paste0("descriptive_stats_", combined_inputs$out_variables, "_", Sys.Date(), ".csv") 
     },
     content = function(file) { 
-      if (analysisResults()$anova$success) {
-        write.csv(analysisResults()$anova$desc_stats, file, row.names = FALSE)
+      # Use the same data as shown in the UI table, including skewness/kurtosis
+      ds <- tryCatch(descriptiveStats(), error = function(e) NULL)
+      if (!is.null(ds) && nrow(ds) > 0) {
+        write.csv(ds, file, row.names = FALSE)
       } else {
-        write.csv(data.frame(Message = "Error calculating descriptive statistics"), file)
+        write.csv(data.frame(Message = "No descriptive statistics available"), file, row.names = FALSE)
       }
     }
   )
