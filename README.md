@@ -19,9 +19,10 @@ StatFaRmer aims to make reproducible and available methods from [(Schmidt et al.
 
 ### Main Application (Statistical Analysis)
 ![Main Application Interface](docs/StatFaRmer%20—%20App.png)
-- Automatic ANOVA and mixed-effects modeling
-- Interactive visualizations and export capabilities
-- Specialized modules for effect sizes and growth summaries
+- **Automatic Model Selection**: ANOVA, mixed-effects, and spline models
+- **Advanced Post-hoc Analysis**: Enhanced Tukey HSD with robust letters generation
+- **Interactive Visualizations**: Professional plots with export capabilities
+- **Specialized Modules**: Effect sizes, growth summaries, and model diagnostics
 
 ## Quick Start
 

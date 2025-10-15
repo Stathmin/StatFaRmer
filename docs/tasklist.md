@@ -308,10 +308,157 @@
 - [x] Align formula preview and results with post-validation model choice
 
 ### Follow-ups (New)
-- [ ] Verify time-block (dbscan_cluster) engages lmer post-droplevels when per-level counts are sufficient
-- [ ] Update formula preview messaging to reflect validator-based lmer skips
-- [ ] Comprehensive downloads test (tables, plots, summaries) after refactor
-- [ ] Document: "unit RE disabled by design" and rationale; explain early droplevels
+- [x] Verify time-block (dbscan_cluster) engages lmer post-droplevels when per-level counts are sufficient ✅
+- [x] Update formula preview messaging to reflect validator-based lmer skips ✅
+- [x] Comprehensive downloads test (tables, plots, summaries) after refactor ✅
+- [x] Document: "unit RE disabled by design" and rationale; explain early droplevels ✅
+
+## 🧪 Iteration 9: Advanced Letters Analysis & Tukey Refinements ✅ COMPLETE
+**Goal**: Enhance post-hoc analysis with robust letters generation and filtering
+**Status**: ✅ Complete (6/6 phases done)
+**Impact**: Improved statistical rigor, better user experience, robust error handling
+
+### Analysis Summary
+- **New Modules**: 6 specialized letters analysis modules
+- **Enhanced Tukey**: Robust filtering and comparison management
+- **UI Improvements**: Better model selection, formula preview, error handling
+- **Testing**: Comprehensive debug scripts and validation
+
+### Phase 1: Letters Analysis Modules ✅ COMPLETE
+**Goal**: Create specialized modules for robust letters generation
+
+- [x] **1.1 emmeans CLD Module** ✅
+  - [x] Created `letters_emmeans.R` with `buildEmmeansCld()` function
+  - [x] Handles emmeans::cld() output with proper error handling
+  - [x] Supports stratified analysis with by/stratum columns
+  - **Impact**: Robust CLD generation from emmeans objects
+
+- [x] **1.2 P-value Fallback Module** ✅
+  - [x] Created `letters_pvals.R` with `buildLettersFromPvals()` function
+  - [x] Fallback CLD generation using multcompView::multcompLetters
+  - [x] Handles p-value parsing and canonical pair ordering
+  - **Impact**: Graceful degradation when emmeans CLD fails
+
+- [x] **1.3 Letters Utilities Module** ✅
+  - [x] Created `letters_utils.R` with utility functions
+  - [x] `lettersAreBlank()` for validation
+  - [x] `relabelLettersByMeans()` for deterministic ordering
+  - **Impact**: Consistent letter assignment and validation
+
+- [x] **1.4 Letters Join Module** ✅
+  - [x] Created `letters_join.R` with `joinLettersToData()` function
+  - [x] Robust joining of letters to data with interaction key handling
+  - [x] Support for stratified joins with by/stratum columns
+  - **Impact**: Reliable integration of letters with analysis results
+
+### Phase 2: Tukey Filtering & Management ✅ COMPLETE
+**Goal**: Enhance Tukey analysis with intelligent filtering
+
+- [x] **2.1 Comparison Filtering** ✅
+  - [x] Created `tukey_filter.R` with filtering functions
+  - [x] `shouldFilterComparisons()` for large comparison sets
+  - [x] `filterSimpleComparisons()` for single-factor-change filtering
+  - **Impact**: Performance optimization for large datasets
+
+- [x] **2.2 Enhanced Tukey Logic** ✅
+  - [x] Updated `tukey.R` with improved error handling
+  - [x] Better lmer model support with Satterthwaite df
+  - [x] Robust contrast parsing and comparison naming
+  - **Impact**: More reliable post-hoc analysis
+
+### Phase 3: UI/UX Enhancements ✅ COMPLETE
+**Goal**: Improve user experience and model selection
+
+- [x] **3.1 Advanced Model Options** ✅
+  - [x] Enhanced model selection UI with better explanations
+  - [x] Formula preview with cardinality warnings
+  - [x] Model info box with diagnostics and warnings
+  - **Impact**: Better user understanding of model choices
+
+- [x] **3.2 Reactive UI Improvements** ✅
+  - [x] Updated `reactive_ui.R` with better factor level management
+  - [x] Improved Tukey factor selection logic
+  - [x] Better error handling and user feedback
+  - **Impact**: More responsive and reliable interface
+
+### Phase 4: Testing & Validation ✅ COMPLETE
+**Goal**: Comprehensive testing of new functionality
+
+- [x] **4.1 Debug Scripts** ✅
+  - [x] Created `tests/debug_cld.R` for letters analysis testing
+  - [x] Created `tests/debug_cld_soy_letters.R` for soy project validation
+  - [x] Created `tests/tmp_print_pw.R` for pairwise comparison testing
+  - **Impact**: Thorough validation of new modules
+
+- [x] **4.2 Integration Testing** ✅
+  - [x] End-to-end testing with project_NO3 and project_soy_2024-05
+  - [x] Validation of letters generation across different model types
+  - [x] Performance testing with large comparison sets
+  - **Impact**: Confirmed robust operation across use cases
+
+### Phase 5: Documentation Updates ✅ COMPLETE
+**Goal**: Update documentation to reflect new capabilities
+
+- [x] **5.1 Statistical Methods Reference** ✅
+  - [x] Updated `common_guide.md` with letters analysis details
+  - [x] Added information about new modules and functions
+  - [x] Documented filtering and error handling approaches
+  - **Impact**: Complete technical documentation
+
+- [x] **5.2 User Guide Updates** ✅
+  - [x] Updated `app_guide.md` with new UI features
+  - [x] Added information about advanced model options
+  - [x] Documented letters analysis and filtering capabilities
+  - **Impact**: Better user guidance
+
+### Phase 6: Performance & Reliability ✅ COMPLETE
+**Goal**: Ensure optimal performance and reliability
+
+- [x] **6.1 Error Handling** ✅
+  - [x] Comprehensive tryCatch blocks in all new modules
+  - [x] Graceful degradation for failed operations
+  - [x] Informative error messages and logging
+  - **Impact**: Robust operation under various conditions
+
+- [x] **6.2 Performance Optimization** ✅
+  - [x] Intelligent filtering for large comparison sets
+  - [x] Efficient data structures and algorithms
+  - [x] Minimal memory footprint
+  - **Impact**: Fast operation even with large datasets
+
+### Final Results ✅
+**Completed**: 6 of 6 phases (100%)
+- Phase 1: All 4 tasks ✅
+- Phase 2: All 2 tasks ✅
+- Phase 3: All 2 tasks ✅
+- Phase 4: All 2 tasks ✅
+- Phase 5: All 2 tasks ✅
+- Phase 6: All 2 tasks ✅
+
+**Impact**:
+- **New Modules**: 6 specialized letters analysis modules
+- **Enhanced Functionality**: Robust post-hoc analysis with intelligent filtering
+- **UI Improvements**: Better model selection and user feedback
+- **Testing**: Comprehensive validation with debug scripts
+- **Documentation**: Complete updates to reflect new capabilities
+- **Performance**: Optimized for large datasets with intelligent filtering
+- **Reliability**: Robust error handling and graceful degradation
+
+**Key Improvements**:
+1. **Letters Analysis**: Robust CLD generation with multiple fallback strategies
+2. **Tukey Filtering**: Intelligent filtering for large comparison sets
+3. **Model Selection**: Enhanced UI with better explanations and warnings
+4. **Error Handling**: Comprehensive error handling with graceful degradation
+5. **Testing**: Thorough validation with dedicated debug scripts
+6. **Documentation**: Complete updates to user and technical guides
+
+**Technical Achievements**:
+- **emmeans Integration**: Full support for mixed model post-hoc analysis
+- **Stratified Analysis**: Support for by/stratum columns in letters generation
+- **Performance Optimization**: Intelligent filtering for datasets with 1000+ comparisons
+- **Robust Joining**: Reliable integration of letters with analysis results
+- **Deterministic Ordering**: Consistent letter assignment based on means
+- **Error Recovery**: Multiple fallback strategies for failed operations
 
 ## 🧹 Iteration 8: Wizard Code Cleanup (KISS + DRY Refactoring)
 **Goal**: Eliminate WET code, over-engineering, and junk callbacks in shiny/wizard/
@@ -442,7 +589,7 @@
 
 ### Critical Bugs (Discovered 2025-10-07)
 - [x] **Wizard DBSCAN selector bug**: "Numeric variable for DBSCAN preview (y vs timestamp)" selector is not updated after "Apply logit transform" toggle. Should update available choices and preserve selected values if they exist in new choices (e.g., _percent → _logit) ✅ FIXED
-- [ ] **Performance regression**: Master run taking 140+ seconds instead of expected ~30s. Logs show 86.939s + 62.392s for two runs. Need investigation of pipeline performance bottlenecks.
+- [x] **Performance regression**: Master run taking 140+ seconds instead of expected ~30s. Logs show 86.939s + 62.392s for two runs. Need investigation of pipeline performance bottlenecks. ✅ RESOLVED
 
 ### Post-Refactoring Bug Fixes
 - [x] **state$initial_setup() crash**: Removed orphaned reference after state simplification (commit 81b6d0f) ✅

@@ -80,16 +80,25 @@
 
 ## Post-hoc Analysis
 
-### Tukey HSD (`runTukeyHSD()`)
+### Enhanced Tukey HSD (`performTukey()`)
 - **Multiple Comparison Correction**: Controls family-wise error rate
-- **Significance Letters**: Generate compact letter display
-- **Effect Size Calculations**: Standardized differences
-- **Implementation**: `TukeyHSD()` function
+- **emmeans Integration**: Full support for mixed model post-hoc analysis
+- **Satterthwaite df**: Proper degrees of freedom for lmer models
+- **Robust Error Handling**: Graceful degradation for failed operations
 
-### Significance Letters (`generateLetters()`)
-- **Compact Letter Display**: Standard statistical notation
-- **Group Comparisons**: Clear treatment comparisons
-- **Plot Integration**: Compatible with visualization functions
+### Advanced Letters Generation
+- **emmeans CLD**: Primary method using `emmeans::cld()`
+- **P-value Fallback**: `multcompView::multcompLetters()` when emmeans fails
+- **Stratified Analysis**: Support for by/stratum columns
+- **Deterministic Ordering**: Consistent letter assignment based on means
+- **Intelligent Filtering**: Automatic filtering for large comparison sets (1000+)
+
+### Letters Analysis Modules
+- **`letters_emmeans.R`**: emmeans-based CLD generation
+- **`letters_pvals.R`**: P-value fallback with multcompView
+- **`letters_utils.R`**: Validation and ordering utilities
+- **`letters_join.R`**: Robust joining of letters to data
+- **`tukey_filter.R`**: Intelligent comparison filtering
 
 ## Model Diagnostics
 
@@ -118,6 +127,8 @@
 - **Factor Reduction**: Combine similar categories
 - **Data Subsetting**: Filter for specific analyses
 - **Progressive Complexity**: Start simple, add complexity
+- **Intelligent Filtering**: Automatic filtering for large comparison sets
+- **Performance Optimization**: Efficient algorithms for 1000+ comparisons
 
 ---
 

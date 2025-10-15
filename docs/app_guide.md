@@ -31,6 +31,12 @@ Rscript launch_statfarmer.R wizard
 - **Mixed Models**: For unbalanced designs or 11-20 factor levels  
 - **Spline Models**: For time-series analysis with temporal effects
 
+**Advanced Model Options**
+- **Auto Selection**: Intelligent model choice based on factor cardinality
+- **Force Options**: Override automatic selection (ANOVA/LMM/Spline)
+- **Formula Preview**: Real-time preview with cardinality warnings
+- **Model Info Box**: Diagnostics, warnings, and model details
+
 **Model Features**
 - **Factor Interactions**: Automatic two-way interactions
 - **Random Effects**: Automatic detection of blocking factors (`dbscan_cluster`, `timestamp_group`)
@@ -85,14 +91,22 @@ Rscript launch_statfarmer.R wizard
 ## Results & Export
 
 **Analysis Results**
-- **ANOVA Tables**: Detailed statistical results
+- **ANOVA Tables**: Detailed statistical results with model information
 - **Descriptive Statistics**: Summary statistics by group
-- **Post-hoc Tests**: Tukey HSD with significance letters
-- **Model Diagnostics**: Assumption testing results
+- **Post-hoc Tests**: Enhanced Tukey HSD with robust letters generation
+- **Group Letters**: Compact letter display with intelligent filtering
+- **Model Diagnostics**: Assumption testing results and convergence checks
+
+**Enhanced Post-hoc Analysis**
+- **Robust Letters Generation**: Multiple fallback strategies for CLD generation
+- **Intelligent Filtering**: Automatic filtering for large comparison sets (1000+)
+- **Stratified Analysis**: Support for by/stratum columns in letters
+- **Error Recovery**: Graceful degradation when analysis fails
 
 **Export Capabilities**
 - **Plot Downloads**: High resolution (300 DPI), multiple formats, custom sizing
 - **Data Exports**: Filtered data, results tables, summary reports, configuration
+- **Letters Tables**: Downloadable group letters with significance information
 
 ## Specialized Modules
 
