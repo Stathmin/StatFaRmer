@@ -1,21 +1,37 @@
-# Ignore ALL dot files and directories
-.*
+## R project
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
 
-# Logs and cache directory
+## renv (track lockfile + essential scripts, ignore caches/libraries)
+renv/library/
+renv/cache/
+renv/staging/
+!renv/activate.R
+!renv/settings.json
+
+## Logs and cache
 logs/
+logs/**
 
-# R package build files (not data archives)
+## IDE/editor/system
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+## Shiny deploy artifacts
+rsconnect/
+deploy_minimal/rsconnect/
+
+## Build/temporary artifacts
 *.tar.gz
-
-# Temporary files
 *.tmp
 *.temp
-
-# R plots (auto-generated)
 Rplots.pdf
 
-# Ignore all data projects EXCEPT the two we want to keep
+## Data: keep only selected projects
 data/*
 !data/project_NO3/
 !data/project_soy_2024-05/
-.Rproj.user
