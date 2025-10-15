@@ -1,2 +1,0 @@
-CC=gcc -std=gnu23
-CFLAGS=-g -O2 -ffile-prefix-map=/build/reproducible-path/r-base-4.5.1=. -fstack-protector-strong -fstack-clash-protection -Wformat -Werror=format-security -fcf-protection -Wdate-time -D_FORTIFY_SOURCE=2
