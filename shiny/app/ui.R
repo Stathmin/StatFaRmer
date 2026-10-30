@@ -15,6 +15,8 @@ library(here)
 
 # Load utility functions
 source(here('shiny', 'common', 'utils.R'))
+# Shared ggplot helpers (main distPlot + BLUP/DR sidecar Plots tabs)
+source(here('shiny', 'common', 'plotting.R'))
 
 # Load new modules
 source(here('shiny', 'app', 'module_effect_sizes.R'))
@@ -39,24 +41,59 @@ default_project <- if (!is.null(getOption('statfarmer.project'))) {
   getDefaultProject(available_projects)
 }
 
-# Load default project data for UI initialization
-data_list <- tryCatch({
-  loadProjectData(default_project)
+# Soft-fail: missing/unprocessed project must not hard-kill Shiny startup
+load_result <- tryCatch({
+  if (is.na(default_project) || !nzchar(as.character(default_project))) {
+    stop('No projects found under data/. Run Master Wizard to create one.')
+  }
+  list(data = loadProjectData(default_project), error = NULL)
 }, error = function(e) {
-  stop(
-    paste(
-      "Failed to load selected project data:",
-      conditionMessage(e)
-    ),
-    call. = FALSE
-  )
+  msg <- conditionMessage(e)
+  message('Failed to load selected project data (soft-fail): ', msg)
+  list(data = emptyProjectData(), error = msg)
 })
+data_list <- load_result$data
+project_load_error <- load_result$error
 
 merged_table <- data_list$merged_table
 vector_of_groups <- data_list$vector_of_groups
+project_data_ready <- isTRUE(nrow(merged_table) > 0)
+project_choices <- projectSelectChoices(available_projects)
 
-# Prepare real UI selections
+# Prepare real UI selections (empty-safe)
 ui_selections <- prepareUISelections(merged_table)
+
+# Defaults that do not assume a multi-level `treatment` column (soy-325 has none)
+n_treat_ui <- length(ui_selections$treatments)
+has_multi_treatment <- n_treat_ui > 1L && "treatment" %in% ui_selections$anova_factors
+default_anova <- intersect(
+  c(if (has_multi_treatment) "treatment", "dbscan_cluster"),
+  ui_selections$anova_factors
+)
+if (length(default_anova) == 0L) {
+  default_anova <- head(setdiff(ui_selections$anova_factors, "unit"), 2L)
+}
+default_color <- if (has_multi_treatment) {
+  "treatment"
+} else if (length(setdiff(ui_selections$anova_factors, "unit")) > 0L) {
+  setdiff(ui_selections$anova_factors, "unit")[1]
+} else {
+  "none"
+}
+default_grouping <- if (n_treat_ui <= 1L && "cultivar" %in% ui_selections$anova_factors) {
+  "cultivar"
+} else if (has_multi_treatment) {
+  "treatment"
+} else if (length(setdiff(ui_selections$anova_factors, "unit")) > 0L) {
+  setdiff(ui_selections$anova_factors, "unit")[1]
+} else {
+  "none"
+}
+default_facet <- if (n_treat_ui <= 1L) {
+  if ("dbscan_cluster" %in% ui_selections$anova_factors) "~ dbscan_cluster" else "~ ."
+} else {
+  "treatment ~ dbscan_cluster"
+}
 
 # =============================================================================
 # USER INTERFACE DEFINITION
@@ -79,88 +116,50 @@ ui <- fluidPage(
   
   # Application title
   titlePanel("StatFaRmer"),
+
+  # Empty / unprocessed project guidance (startup soft-fail)
+  if (!isTRUE(project_data_ready)) {
+    div(
+      class = 'alert alert-warning',
+      role = 'alert',
+      style = 'margin: 12px 16px;',
+      tags$strong('No processed project data loaded. '),
+      if (!is.null(project_load_error)) {
+        tags$span(project_load_error, tags$br())
+      },
+      tags$span(
+        'Pick a processed project in the sidebar, or run Master Wizard ',
+        '(launch menu option [1]) to create ',
+        tags$code('*_merged_table.rds'), ' and ', tags$code('*_vector_of_groups.rds'), '.'
+      )
+    )
+  },
   
   # Sidebar layout
   sidebarLayout(
     sidebarPanel(
-      # Project selection
+      # ----- Data (filters) -----
+      h5("Data", style = "margin-top:0;"),
       selectInput(
         'selected_project',
-        'Select Project:',
-        choices = available_projects,
-        selected = default_project
+        'Project:',
+        choices = project_choices,
+        selected = if (!is.na(default_project)) default_project else NULL
       ),
-      
-      # ANOVA factors selection
       selectInput(
-        'anova_factors',
-        'ANOVA factors:',
-        choices = ui_selections$anova_factors,
-        multiple = TRUE,
-        selected = c('treatment', 'dbscan_cluster')
+        'out_variables',
+        'Trait:',
+        choices = ui_selections$out_variables,
+        multiple = FALSE,
+        selected = ui_selections$out_variables[1]
       ),
-      
-      # Tukey factors selection
-      selectInput(
-        'tukey_factors',
-        'Tukey factors:',
-        choices = ui_selections$anova_factors,
-        multiple = TRUE,
-        selected = c('treatment', 'dbscan_cluster')
-      ),
-
-      # Color by factor selection
-      selectInput(
-        'color_by',
-        'Color by:',
-        choices = c(ui_selections$anova_factors, 'Group Letter' = 'group_letter', 'None' = 'none'),
-        selected = 'treatment'
-      ),
-      
-      # Grouping factor selection (None = no forced x-axis factor — #10)
-      selectInput(
-        'factor_grouping',
-        'Grouping factor:',
-        choices = c('None' = 'none', ui_selections$anova_factors),
-        selected = 'treatment'
-      ),
-      
-      # Factor levels selection
-      selectizeInput(
-        'factor_levels',
-        'Factor levels:',
-        choices = ui_selections$treatments,
-        multiple = TRUE,
-        selected = ui_selections$treatments
-      ),
-      
-      # Treatments selection
-      selectInput(
-        'treatments',
-        'Selected treatments:',
-        choices = ui_selections$treatments,
-        multiple = TRUE,
-        selected = ui_selections$treatments
-      ),
-      
-      # Cultivars selection (default: all)
-      selectInput(
-        'cultivars',
-        'Selected cultivars:',
-        choices = ui_selections$cultivars,
-        multiple = TRUE,
-        selected = ui_selections$cultivars
-      ),
-      
-      # Time clusters selection
       shinyWidgets::pickerInput(
         inputId = "timestamp_groups",
-        label = "Selected time clusters:",
+        label = "Time clusters:",
         choices = ui_selections$named_timestamp_groups,
         selected = {
           n <- length(ui_selections$timestamp_groups)
           if (n >= 3) {
-            # Select first, middle, last as character to match picker format
             as.character(ui_selections$timestamp_groups[c(1, ceiling(n/2), n)])
           } else {
             as.character(ui_selections$timestamp_groups)
@@ -169,44 +168,49 @@ ui <- fluidPage(
         options = shinyWidgets::pickerOptions(actionsBox = TRUE, size = 10),
         multiple = TRUE
       ),
-      
-      # Output variables selection
       selectInput(
-        'out_variables',
-        'Selected trait:',
-        choices = ui_selections$out_variables,
-        multiple = FALSE,
-        selected = ui_selections$out_variables[1]
+        'treatments',
+        'Treatments (filter):',
+        choices = ui_selections$treatments,
+        multiple = TRUE,
+        selected = ui_selections$treatments
       ),
-      
-      # Facet formula input (one-sided / `. ~ x` wraps into columns — #14)
-      textInput(
-        'facet_formula',
-        'Facet formula:',
-        value = 'treatment ~ dbscan_cluster',
-        placeholder = 'treatment ~ dbscan_cluster  |  ~ cultivar'
+      selectInput(
+        'cultivars',
+        'Cultivars (filter):',
+        choices = ui_selections$cultivars,
+        multiple = TRUE,
+        selected = ui_selections$cultivars
       ),
-      numericInput(
-        'facet_ncol',
-        'Facet wrap columns (one-sided formulas):',
-        value = 2, min = 1, max = 8, step = 1
+      checkboxInput('outliers_plot', 'Include outliers in data/plot', FALSE),
+
+      hr(),
+      # ----- Model (Submit runs analysis) -----
+      h5("Model"),
+      helpText(tags$small("These drive ANOVA/Tukey on Submit — not plot layout.")),
+      selectInput(
+        'anova_factors',
+        'ANOVA factors:',
+        choices = ui_selections$anova_factors,
+        multiple = TRUE,
+        selected = default_anova
       ),
-      
-      # Plot options
-      checkboxInput('timeseries_plot', ': plot timeseries with medians', FALSE),
-      checkboxInput('outliers_plot', ': plot with outliers', FALSE),
-      
-      # Advanced Model Options
-      br(),
+      selectInput(
+        'tukey_factors',
+        'Tukey / letters factors:',
+        choices = ui_selections$anova_factors,
+        multiple = TRUE,
+        selected = default_anova
+      ),
       tags$details(
         tags$summary(
           style = "cursor: pointer; font-weight: bold; color: #337ab7;",
-          "⚙️ Advanced Model Options"
+          "Advanced model options"
         ),
         br(),
         radioButtons(
           'model_selection_method',
-          'Model Selection:',
+          'Model selection:',
           choices = c(
             'Auto (Recommended)' = 'auto',
             'Force ANOVA' = 'aov',
@@ -218,22 +222,50 @@ ui <- fluidPage(
         helpText(
           tags$small(
             tags$strong("Auto:"), " ≤10 timepoints → ANOVA, >10 → Spline LMM", tags$br(),
-            tags$strong("ANOVA:"), " Classic fixed-effects model", tags$br(),
-            tags$strong("LMM:"), " Linear mixed model with random effects", tags$br(),
-            tags$strong("Spline:"), " Nonlinear growth curves (slower)"
+            tags$strong("Unfit designs"), " (no multi-level factors) are skipped — no false ANOVA."
           )
         )
       ),
-      br(),
-      
-      # Submit button
-      actionButton("submit", "Submit"),
-      
-      # Plot dimensions
-      numericInput('plot_width', "Plot width, mm", 180),
-      numericInput('plot_height', "Plot height, mm", 112),
-      
-      # Download button
+      actionButton("submit", "Run analysis", class = "btn-primary", width = "100%"),
+      uiOutput("analysis_status_banner"),
+
+      hr(),
+      # ----- Plot (visuals only) -----
+      h5("Plot"),
+      helpText(tags$small("Visuals only. CLD letters appear after a successful Tukey run.")),
+      selectInput(
+        'color_by',
+        'Color by:',
+        choices = c(ui_selections$anova_factors, 'Group Letter' = 'group_letter', 'None' = 'none'),
+        selected = default_color
+      ),
+      selectInput(
+        'factor_grouping',
+        'X-axis grouping:',
+        choices = c('None' = 'none', ui_selections$anova_factors),
+        selected = default_grouping
+      ),
+      selectizeInput(
+        'factor_levels',
+        'X-axis levels (optional):',
+        choices = ui_selections$treatments,
+        multiple = TRUE,
+        selected = ui_selections$treatments
+      ),
+      textInput(
+        'facet_formula',
+        'Facet formula:',
+        value = default_facet,
+        placeholder = '~ dbscan_cluster  |  treatment ~ cultivar'
+      ),
+      numericInput(
+        'facet_ncol',
+        'Facet wrap columns:',
+        value = 2, min = 1, max = 8, step = 1
+      ),
+      checkboxInput('timeseries_plot', 'Timeseries (medians)', FALSE),
+      numericInput('plot_width', "Export width, mm", 180),
+      numericInput('plot_height', "Export height, mm", 112),
       downloadButton("savePlot", "Save Plot as SVG")
     ),
     

@@ -81,12 +81,31 @@ blupRankingUI <- function(id) {
 
       column(8,
         tabsetPanel(
+          tabPanel("Plots",
+            br(),
+            p("Shared StatFaRmer theme (same as main distPlot). Ranks, Dunnett posthoc, and treatment EMMeans."),
+            plotOutput(ns("blup_rank_plot"), height = "420px"),
+            downloadButton(ns("blup_rank_svg"), "Save ranks SVG"),
+            hr(),
+            plotOutput(ns("blup_dunnett_plot"), height = "360px"),
+            downloadButton(ns("blup_dunnett_svg"), "Save Dunnett SVG"),
+            hr(),
+            plotOutput(ns("blup_treatment_plot"), height = "320px"),
+            downloadButton(ns("blup_treatment_svg"), "Save treatment SVG")
+          ),
           tabPanel("Genotype ranks",
             br(),
             p("Rank 1 = highest genotype BLUP. SE from conditional variance when available."),
             DT::dataTableOutput(ns("genotype_table")),
             br(),
             downloadButton(ns("genotype_download"), "Download genotype ranks (CSV)")
+          ),
+          tabPanel("Dunnett",
+            br(),
+            p("Fixed-genotype Dunnett vs checks (FDR). Empty until checks are set and Calculate BLUP succeeds."),
+            DT::dataTableOutput(ns("dunnett_table")),
+            br(),
+            downloadButton(ns("dunnett_download"), "Download Dunnett (CSV)")
           ),
           tabPanel("Treatment",
             br(),
@@ -113,6 +132,7 @@ blupRankingUI <- function(id) {
               tags$li(strong("Input:"), " one row per plant from Growth Summaries (selected times only)."),
               tags$li(strong("Spatial:"), " optional per-table X/Y residualize before lmer."),
               tags$li(strong("Model:"), " (1|genotype) + treatment FE (≥2 levels) + (1|repeat) + (1|table_no)."),
+              tags$li(strong("Plots:"), " createBlupRankPlot / Dunnett / Treatment via shiny/common/plotting.R."),
               tags$li(strong("Single treatment:"), " genotype ranks still fill; Treatment panel stays empty until ≥2 levels."),
               tags$li(strong("Multi-time raw:"), " blocked — collapse in Growth Summaries first.")
             )
@@ -216,6 +236,159 @@ blupRankingServer <- function(id, plant_summaries, combined_inputs) {
       })
     })
 
+    .sf_blup_fail_msg <- function(res) {
+      if (!is.null(res$reason) && nzchar(as.character(res$reason))) {
+        as.character(res$reason)
+      } else {
+        "BLUP failed"
+      }
+    }
+
+    output$blup_rank_plot <- renderPlot({
+      if (!isTruthy(input$calculate_blup) || input$calculate_blup < 1L) {
+        return(statfarmerEmptyPlot("Click Calculate BLUP to draw genotype ranks."))
+      }
+      res <- blup_result()
+      req(res)
+      if (isFALSE(res$success)) {
+        return(statfarmerEmptyPlot(.sf_blup_fail_msg(res)))
+      }
+      trait <- res$meta$trait
+      createBlupRankPlot(
+        res$genotype_table,
+        checks = res$meta$checks,
+        title = paste0(
+          "Genotype BLUP ranks",
+          if (!is.null(trait) && nzchar(as.character(trait))) paste0(" — ", trait) else ""
+        )
+      )
+    }, bg = "white")
+
+    output$blup_dunnett_plot <- renderPlot({
+      if (!isTruthy(input$calculate_blup) || input$calculate_blup < 1L) {
+        return(statfarmerEmptyPlot("Dunnett plot appears after Calculate BLUP (with checks)."))
+      }
+      res <- blup_result()
+      req(res)
+      if (isFALSE(res$success)) {
+        return(statfarmerEmptyPlot(.sf_blup_fail_msg(res)))
+      }
+      createBlupDunnettPlot(res$meta$dunnett)
+    }, bg = "white")
+
+    output$blup_treatment_plot <- renderPlot({
+      if (!isTruthy(input$calculate_blup) || input$calculate_blup < 1L) {
+        return(statfarmerEmptyPlot("Treatment plot appears after Calculate BLUP."))
+      }
+      res <- blup_result()
+      req(res)
+      if (isFALSE(res$success)) {
+        return(statfarmerEmptyPlot(.sf_blup_fail_msg(res)))
+      }
+      createBlupTreatmentPlot(res$treatment_table)
+    }, bg = "white")
+
+    .sf_blup_save_svg <- function(file, plot_obj) {
+      ggplot2::ggsave(
+        file, plot = plot_obj,
+        width = 180, height = 112, units = "mm", bg = "white",
+        device = if (requireNamespace("svglite", quietly = TRUE)) svglite::svglite else "svg"
+      )
+    }
+
+    .sf_blup_current_rank_plot <- function() {
+      res <- blup_result()
+      req(res, isTRUE(res$success))
+      trait <- res$meta$trait
+      createBlupRankPlot(
+        res$genotype_table,
+        checks = res$meta$checks,
+        title = paste0(
+          "Genotype BLUP ranks",
+          if (!is.null(trait) && nzchar(as.character(trait))) paste0(" — ", trait) else ""
+        )
+      )
+    }
+
+    output$blup_rank_svg <- downloadHandler(
+      filename = function() paste0("blup_ranks_", Sys.Date(), ".svg"),
+      content = function(file) .sf_blup_save_svg(file, .sf_blup_current_rank_plot())
+    )
+    output$blup_dunnett_svg <- downloadHandler(
+      filename = function() paste0("blup_dunnett_", Sys.Date(), ".svg"),
+      content = function(file) {
+        res <- blup_result()
+        req(res, isTRUE(res$success))
+        .sf_blup_save_svg(file, createBlupDunnettPlot(res$meta$dunnett))
+      }
+    )
+    output$blup_treatment_svg <- downloadHandler(
+      filename = function() paste0("blup_treatment_", Sys.Date(), ".svg"),
+      content = function(file) {
+        res <- blup_result()
+        req(res, isTRUE(res$success))
+        .sf_blup_save_svg(file, createBlupTreatmentPlot(res$treatment_table))
+      }
+    )
+
+    output$dunnett_table <- DT::renderDataTable({
+      if (!isTruthy(input$calculate_blup) || input$calculate_blup < 1L) {
+        return(DT::datatable(
+          data.frame(Message = "Set check genotypes and click Calculate BLUP for Dunnett."),
+          rownames = FALSE,
+          options = list(dom = "t")
+        ))
+      }
+      res <- blup_result()
+      req(res)
+      if (isFALSE(res$success)) {
+        return(DT::datatable(
+          data.frame(Message = .sf_blup_fail_msg(res)),
+          rownames = FALSE,
+          options = list(dom = "t")
+        ))
+      }
+      d <- res$meta$dunnett
+      if (is.null(d)) {
+        return(DT::datatable(
+          data.frame(Message = "No Dunnett — leave checks empty means ranks only."),
+          rownames = FALSE,
+          options = list(dom = "t")
+        ))
+      }
+      if (is.list(d) && !is.data.frame(d)) {
+        return(DT::datatable(
+          data.frame(Message = d$message %||% "Dunnett unavailable"),
+          rownames = FALSE,
+          options = list(dom = "t")
+        ))
+      }
+      if (!is.data.frame(d) || nrow(d) < 1L) {
+        return(DT::datatable(
+          data.frame(Message = "Dunnett table empty."),
+          rownames = FALSE,
+          options = list(dom = "t")
+        ))
+      }
+      DT::datatable(
+        d %>%
+          dplyr::mutate(dplyr::across(tidyselect::where(is.numeric), ~signif(., 4))),
+        options = list(pageLength = 15, scrollX = TRUE),
+        rownames = FALSE
+      )
+    })
+
+    output$dunnett_download <- downloadHandler(
+      filename = function() paste0("blup_dunnett_", Sys.Date(), ".csv"),
+      content = function(file) {
+        res <- blup_result()
+        req(res, isTRUE(res$success))
+        d <- res$meta$dunnett
+        req(is.data.frame(d), nrow(d) > 0L)
+        write.csv(d, file, row.names = FALSE)
+      }
+    )
+
     output$genotype_table <- DT::renderDataTable({
       if (!isTruthy(input$calculate_blup) || input$calculate_blup < 1L) {
         return(.sf_blup_idle_msg())
@@ -224,7 +397,7 @@ blupRankingServer <- function(id, plant_summaries, combined_inputs) {
       req(res)
       if (isFALSE(res$success)) {
         return(DT::datatable(
-          data.frame(Message = res$reason %||% "BLUP failed"),
+          data.frame(Message = .sf_blup_fail_msg(res)),
           rownames = FALSE,
           options = list(dom = "t")
         ))

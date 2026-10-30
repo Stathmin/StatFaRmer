@@ -51,11 +51,24 @@ traitReductionUI <- function(id) {
 
       column(8,
         tabsetPanel(
-          tabPanel("Scree",
+          tabPanel("Plots",
             br(),
-            p("Proportion of variance per PC. Click Calculate PCA to fill this panel."),
-            plotOutput(ns("scree_plot"), height = "360px"),
+            p("Shared StatFaRmer ggplot theme (createDrScreePlot / Scores / Loadings in plotting.R)."),
+            selectInput(ns("dr_color_by"), "Color plant scores by:",
+                        choices = c("cultivar", "treatment", "none"),
+                        selected = "cultivar"),
+            plotOutput(ns("scree_plot"), height = "320px"),
+            downloadButton(ns("scree_svg"), "Save scree SVG"),
+            hr(),
+            plotOutput(ns("scores_plot"), height = "400px"),
+            downloadButton(ns("scores_svg"), "Save scores SVG"),
+            hr(),
+            plotOutput(ns("loadings_plot"), height = "420px"),
+            downloadButton(ns("loadings_svg"), "Save loadings SVG")
+          ),
+          tabPanel("Scree table",
             br(),
+            p("Proportion of variance per PC."),
             DT::dataTableOutput(ns("variance_table"))
           ),
           tabPanel("Loadings",
@@ -85,6 +98,7 @@ traitReductionUI <- function(id) {
             tags$ul(
               tags$li(strong("Rows:"), " plants only (Growth Summaries collapse)."),
               tags$li(strong("Columns:"), " user-selected numeric phenotypes — not cultivar/treatment."),
+              tags$li(strong("Plots:"), " createDrScreePlot, createDrScoresPlot, createDrLoadingsPlot via plotting.R."),
               tags$li(strong("Output:"), " PC1… on the same plant table for the BLUP trait chooser."),
               tags$li(strong("Refresh:"), " re-running Growth Summaries clears cached PCs — Calculate PCA again."),
               tags$li(strong("Anti-goal:"), " never mass-BLUP-then-PCA; never genotype×trait mean matrix."),
@@ -229,32 +243,94 @@ traitReductionServer <- function(id, plant_summaries, combined_inputs) {
       pcs
     })
 
+    .sf_dr_fail_reason <- function(res) {
+      if (!is.null(res$meta$reason) && nzchar(as.character(res$meta$reason))) {
+        as.character(res$meta$reason)
+      } else {
+        "PCA failed"
+      }
+    }
+
     output$scree_plot <- renderPlot({
       res <- dr_cache()
       if (is.null(res)) {
-        plot.new()
-        text(0.5, 0.5, "Click Calculate PCA to draw the scree plot.", cex = 1.1)
-        return(invisible())
+        return(statfarmerEmptyPlot("Click Calculate PCA to draw the scree plot."))
       }
       if (isFALSE(res$meta$success)) {
-        plot.new()
-        text(0.5, 0.5, res$meta$reason %||% "PCA failed", cex = 1.2)
-        return(invisible())
+        return(statfarmerEmptyPlot(.sf_dr_fail_reason(res)))
       }
-      v <- res$variance
-      req(v, nrow(v) > 0L)
-      op <- par(mar = c(5, 4, 2, 1))
-      on.exit(par(op), add = TRUE)
-      barplot(
-        v$prop_var,
-        names.arg = v$component,
-        ylab = "Proportion of variance",
-        xlab = "Component",
-        main = "Scree (plant × traits PCA)",
-        col = "#3498db",
-        border = NA
+      createDrScreePlot(res$variance)
+    }, bg = "white")
+
+    output$scores_plot <- renderPlot({
+      res <- dr_cache()
+      if (is.null(res)) {
+        return(statfarmerEmptyPlot("Click Calculate PCA to draw plant PC scores."))
+      }
+      if (isFALSE(res$meta$success)) {
+        return(statfarmerEmptyPlot(.sf_dr_fail_reason(res)))
+      }
+      color_by <- input$dr_color_by
+      if (is.null(color_by) || identical(color_by, "none")) color_by <- NULL
+      createDrScoresPlot(
+        res$plant_df_with_pcs,
+        color_by = color_by,
+        title = "Plant PC scores (PC1 vs PC2)"
       )
-    })
+    }, bg = "white")
+
+    output$loadings_plot <- renderPlot({
+      res <- dr_cache()
+      if (is.null(res)) {
+        return(statfarmerEmptyPlot("Click Calculate PCA to draw trait loadings."))
+      }
+      if (isFALSE(res$meta$success)) {
+        return(statfarmerEmptyPlot(.sf_dr_fail_reason(res)))
+      }
+      createDrLoadingsPlot(res$loadings)
+    }, bg = "white")
+
+    .sf_dr_save_svg <- function(file, plot_obj) {
+      ggplot2::ggsave(
+        file, plot = plot_obj,
+        width = 180, height = 112, units = "mm", bg = "white",
+        device = if (requireNamespace("svglite", quietly = TRUE)) svglite::svglite else "svg"
+      )
+    }
+
+    output$scree_svg <- downloadHandler(
+      filename = function() paste0("trait_dr_scree_", Sys.Date(), ".svg"),
+      content = function(file) {
+        res <- dr_cache()
+        req(res, isTRUE(res$meta$success))
+        .sf_dr_save_svg(file, createDrScreePlot(res$variance))
+      }
+    )
+    output$scores_svg <- downloadHandler(
+      filename = function() paste0("trait_dr_scores_", Sys.Date(), ".svg"),
+      content = function(file) {
+        res <- dr_cache()
+        req(res, isTRUE(res$meta$success))
+        color_by <- input$dr_color_by
+        if (is.null(color_by) || identical(color_by, "none")) color_by <- NULL
+        .sf_dr_save_svg(
+          file,
+          createDrScoresPlot(
+            res$plant_df_with_pcs,
+            color_by = color_by,
+            title = "Plant PC scores (PC1 vs PC2)"
+          )
+        )
+      }
+    )
+    output$loadings_svg <- downloadHandler(
+      filename = function() paste0("trait_dr_loadings_", Sys.Date(), ".svg"),
+      content = function(file) {
+        res <- dr_cache()
+        req(res, isTRUE(res$meta$success))
+        .sf_dr_save_svg(file, createDrLoadingsPlot(res$loadings))
+      }
+    )
 
     output$variance_table <- DT::renderDataTable({
       res <- dr_cache()
