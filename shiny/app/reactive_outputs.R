@@ -178,26 +178,26 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
     
     data_to_plot <- withBenchmark('Shiny:PrepPlotData', filteredData())
     
-    # Add group letters if requested
-    if (!is.null(input$color_by) && input$color_by == 'group_letter' && 
-        !is.null(analysisResults()) && !is.null(analysisResults()$tukey) && 
-        analysisResults()$tukey$success) {
+    # Add group letters when Tukey succeeded (for color and/or text labels — #12)
+    want_letters <- !is.null(analysisResults()) && !is.null(analysisResults()$tukey) &&
+      isTRUE(analysisResults()$tukey$success)
+    if (want_letters) {
       
       tukey_results <- analysisResults()$tukey$results
       data_to_plot$group_letter <- NA_character_
       
       cat("DEBUG: Adding group letters. Tukey factors:", paste(names(tukey_results), collapse=", "), "\n")
 
-      # Respect user-selected factor order when joining letters
+      # Respect user-selected Tukey factor order when joining letters
       ordered_factors <- tryCatch({
-        if (!is.null(combined_inputs$anova_factors)) {
-          intersect(as.character(combined_inputs$anova_factors), names(tukey_results))
+        tf <- combined_inputs$tukey_factors
+        if (is.null(tf) || length(tf) == 0) tf <- combined_inputs$anova_factors
+        if (!is.null(tf)) {
+          intersect(as.character(tf), names(tukey_results))
         } else names(tukey_results)
       }, error = function(e) names(tukey_results))
-      # When coloring by Group Letter, restrict to MAIN comparison only (first selected factor)
-      if (!is.null(input$color_by) && identical(input$color_by, 'group_letter')) {
-        if (length(ordered_factors) > 1) ordered_factors <- ordered_factors[1]
-      }
+      # Prefer MAIN Tukey factor (first selected) for plot letters
+      if (length(ordered_factors) > 1) ordered_factors <- ordered_factors[1]
       
       created_temp_cols <- character(0)
       # Join letters from all Tukey factors in the selected order
@@ -276,13 +276,30 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
       cat("DEBUG: Final group_letter - NAs:", sum(is.na(data_to_plot$group_letter)), "/ Total:", nrow(data_to_plot), "\n")
     }
     
+    # Guard empty / all-NA trait (black / blank plots — #13)
+    y_var <- combined_inputs$out_variables
+    req(!is.null(y_var), y_var %in% names(data_to_plot), nrow(data_to_plot) > 0)
+    if (all(is.na(data_to_plot[[y_var]]))) {
+      return(
+        ggplot2::ggplot() +
+          ggplot2::annotate("text", x = 0.5, y = 0.5, label = paste("No non-NA values for", y_var), size = 5) +
+          getStatfarmerTheme() +
+          ggplot2::theme_void()
+      )
+    }
+
     # Determine plot type and aesthetics
-    use_color <- !is.null(input$color_by) && input$color_by != 'none'
+    use_color <- !is.null(input$color_by) && input$color_by != 'none' && input$color_by %in% names(data_to_plot)
     color_var <- if (use_color) input$color_by else NULL
     
     # Faceting
     facet_ok <- !is.null(input$facet_formula) && nzchar(input$facet_formula) && input$facet_formula != '~ .'
     facet_fml <- if (facet_ok) tryCatch(as.formula(input$facet_formula), error = function(e) NULL) else NULL
+    facet_ncol <- if (!is.null(input$facet_ncol)) as.integer(input$facet_ncol) else 2L
+
+    grouping <- combined_inputs$factor_grouping
+    use_grouping <- !is.null(grouping) && nzchar(grouping) && !identical(grouping, "none") &&
+      grouping %in% names(data_to_plot)
     
     # Create plot based on plot type
     if (!is.null(combined_inputs$timeseries_plot) && combined_inputs$timeseries_plot) {
@@ -294,16 +311,23 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
       } else {
         "dbscan_cluster"
       }
-      
-      p <- data_to_plot %>%
-        ggplot(aes(x = !!sym(time_var), y = !!sym(combined_inputs$out_variables))) +
-        stat_summary(fun = median, geom = "line", aes(group = interaction(!!!syms(if (use_color) c(color_var) else character(0))))) +
+
+      # Avoid interaction() with zero args (can yield blank/black plots — #13)
+      if (use_color) {
+        p <- data_to_plot %>%
+          ggplot(aes(x = !!sym(time_var), y = !!sym(y_var), color = !!sym(color_var), group = !!sym(color_var)))
+      } else {
+        p <- data_to_plot %>%
+          ggplot(aes(x = !!sym(time_var), y = !!sym(y_var), group = 1))
+      }
+      p <- p +
+        stat_summary(fun = median, geom = "line") +
         stat_summary(fun = median, geom = "point", size = 2) +
         getStatfarmerTheme() +
         labs(
-          title = paste("Timeseries of", combined_inputs$out_variables),
+          title = paste("Timeseries of", y_var),
           x = if (time_var == "timestamp_group") "Date/Time" else if (time_var == "time_numeric") "Time (days)" else "Time Cluster",
-          y = combined_inputs$out_variables
+          y = y_var
         )
       
       # Rotate x-axis labels if using timestamps (better readability)
@@ -311,21 +335,59 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
         p <- p + theme(axis.text.x = element_text(angle = 45, hjust = 1))
       }
       
-      if (use_color) p <- p + aes(color = !!sym(color_var)) + viridis::scale_color_viridis(discrete = TRUE, end = 0.9)
-      if (facet_ok) p <- p + facet_grid(facet_fml)
+      if (use_color) p <- p + viridis::scale_color_viridis(discrete = TRUE, end = 0.9)
+      if (facet_ok) p <- applyStatfarmerFacet(p, facet_fml, ncol = facet_ncol)
     } else {
-      # Boxplot
+      # Boxplot — grouping "none" → single x category (#10)
+      if (use_grouping) {
+        x_var <- grouping
+        x_lab <- grouping
+      } else if (use_color && !identical(color_var, "group_letter")) {
+        x_var <- color_var
+        x_lab <- color_var
+      } else {
+        data_to_plot$.sf_x <- "all"
+        x_var <- ".sf_x"
+        x_lab <- "all"
+      }
+
       p <- data_to_plot %>%
-        ggplot(aes(x = !!sym(combined_inputs$factor_grouping), y = !!sym(combined_inputs$out_variables))) +
-        geom_boxplot(outlier.alpha = if (combined_inputs$outliers_plot) 0.6 else 0) +
+        ggplot(aes(x = !!sym(x_var), y = !!sym(y_var))) +
+        geom_boxplot(outlier.alpha = if (isTRUE(combined_inputs$outliers_plot)) 0.6 else 0) +
         getStatfarmerTheme() +
         labs(
-          title = paste("Distribution of", combined_inputs$out_variables),
-          x = combined_inputs$factor_grouping,
-          y = combined_inputs$out_variables
+          title = paste("Distribution of", y_var),
+          x = x_lab,
+          y = y_var
         )
       if (use_color) p <- p + aes(color = !!sym(color_var)) + viridis::scale_color_viridis(discrete = TRUE, end = 0.9)
-      if (facet_ok) p <- p + facet_grid(facet_fml)
+      if (facet_ok) p <- applyStatfarmerFacet(p, facet_fml, ncol = facet_ncol)
+
+      # CLD letters as text above boxes (#12)
+      if ("group_letter" %in% names(data_to_plot) && any(!is.na(data_to_plot$group_letter))) {
+        grp_cols <- unique(c(x_var, if (use_color) color_var else NULL))
+        grp_cols <- intersect(grp_cols, names(data_to_plot))
+        letter_pos <- data_to_plot %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(grp_cols))) %>%
+          dplyr::summarise(
+            .y = max(!!sym(y_var), na.rm = TRUE),
+            group_letter = {
+              vals <- group_letter[!is.na(group_letter)]
+              if (length(vals)) as.character(vals[[1]]) else NA_character_
+            },
+            .groups = "drop"
+          ) %>%
+          dplyr::filter(!is.na(group_letter))
+        if (nrow(letter_pos) > 0 && is.finite(max(letter_pos$.y, na.rm = TRUE))) {
+          p <- p +
+            ggplot2::geom_text(
+              data = letter_pos,
+              ggplot2::aes(x = !!sym(x_var), y = .y, label = group_letter),
+              vjust = -0.4, size = 3.5, inherit.aes = FALSE
+            ) +
+            ggplot2::expand_limits(y = max(letter_pos$.y, na.rm = TRUE) * 1.08)
+        }
+      }
     }
     
     return(withBenchmark('Shiny:RenderPlot', p))
@@ -334,19 +396,21 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
   # Main plot
   output$distPlot <- renderPlot({
     createMainPlot()
-  })
+  }, bg = "white")
   
-  # Download plot as SVG
+  # Download plot as SVG (explicit white bg + svglite — #11)
   output$savePlot <- downloadHandler(
     filename = function() {
       paste0("statfarmer_plot_", Sys.Date(), ".svg")
     },
     content = function(file) {
-      # Recreate the plot for download
       plot_obj <- createMainPlot()
-      ggsave(file, plot = plot_obj, 
-             width = input$plot_width, height = input$plot_height, 
-             units = "mm", device = "svg")
+      ggplot2::ggsave(
+        file, plot = plot_obj,
+        width = input$plot_width, height = input$plot_height,
+        units = "mm", bg = "white",
+        device = if (requireNamespace("svglite", quietly = TRUE)) svglite::svglite else "svg"
+      )
     }
   )
   
@@ -390,7 +454,7 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
       max_card <- if (!is.null(anova_results$cardinality)) max(anova_results$cardinality, na.rm = TRUE) else 0
       if (max_card > 20) {
         tukey_skip_reason <- paste0("Skipped: too many factor levels (", max_card, ") for pairwise comparisons. ",
-                                    "Use growth summaries or effect sizes for high-cardinality factors.")
+                                    "Use the BLUP tab for genotype ranking, or growth summaries / effect sizes for high-cardinality factors.")
       } else {
         tukey_results <- tryCatch({
           withBenchmark('Shiny:Tukey', performTukey(anova_results$model, tukey_fac))
@@ -695,7 +759,8 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
       if (max_card > 20 && model_type == 'aov') {
         info_lines <- c(info_lines, 
           paste0("<strong>⚠️ Note:</strong> High cardinality (", max_card, " levels) detected. ",
-                 "Fell back to ANOVA for performance. Consider using growth summaries for time analysis."))
+                 "Fell back to ANOVA for performance. Consider using growth summaries for time analysis, ",
+                 "or the BLUP tab for high-cardinality genotype ranking."))
       }
       
       if (length(blocking_factors) > 0) {
@@ -867,6 +932,9 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
   # Tukey table
   output$tukeyTable_flex <- DT::renderDT({
     req(analysisResults())
+    if (!is.null(analysisResults()$tukey_skip_reason)) {
+      return(DT::datatable(data.frame(Message = analysisResults()$tukey_skip_reason)))
+    }
     if (!is.null(analysisResults()$tukey) && analysisResults()$tukey$success) {
       # Combine all Tukey results
       all_results <- data.frame()
@@ -895,6 +963,9 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
   # Group letters table
   output$tukeyLetters_flex <- DT::renderDT({
     req(analysisResults())
+    if (!is.null(analysisResults()$tukey_skip_reason)) {
+      return(DT::datatable(data.frame(Message = analysisResults()$tukey_skip_reason)))
+    }
     if (!is.null(analysisResults()$tukey) && analysisResults()$tukey$success) {
       # Combine all group letters
       all_letters <- data.frame()
@@ -923,7 +994,6 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
   # ANOVA plot
   output$ANOVAPlot <- renderPlot({
     req(analysisResults())
-    req(combined_inputs$factor_grouping)
     
     if (analysisResults()$anova$success) {
       createANOVAPlot(
@@ -940,7 +1010,7 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
         getStatfarmerTheme() +
         theme_void()
     }
-  })
+  }, bg = "white")
   
   return(list(
     analysisResults = analysisResults,

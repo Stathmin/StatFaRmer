@@ -35,3 +35,13 @@ Rplots.pdf
 data/*
 !data/project_NO3/
 !data/project_soy_2024-05/
+
+tmp/
+
+
+## Local experiment dirt (keep tracked history; hide new untracked)
+data/*
+!data/project_*/
+data/project_*/**
+**/skills-inventory*.tsv
+

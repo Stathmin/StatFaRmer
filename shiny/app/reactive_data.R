@@ -52,12 +52,9 @@ createReactiveData <- function(input, session, combined_inputs) {
   
   # Filter data based on inputs
   filteredData <- reactive({
-    req(combined_inputs$factor_grouping)
-    req(combined_inputs$factor_levels)
-    req(combined_inputs$treatments)
-    req(combined_inputs$cultivars)
-    req(combined_inputs$timestamp_groups)
+    # Trait + times are required; grouping/treatment may be soft (#8 single treatment, #10 none)
     req(combined_inputs$out_variables)
+    req(combined_inputs$timestamp_groups)
     
     # Get current project data
     current_data <- projectData()
@@ -92,6 +89,13 @@ createReactiveData <- function(input, session, combined_inputs) {
       character(0)
     })
 
+    grouping <- combined_inputs$factor_grouping
+    use_grouping <- !is.null(grouping) && nzchar(grouping) && !identical(grouping, "none") &&
+      grouping %in% names(current_data$merged_table)
+    factor_levels <- combined_inputs$factor_levels
+    treatments <- combined_inputs$treatments
+    cultivars <- combined_inputs$cultivars
+
     filtered <- withBenchmark('Shiny:FilterData', {
       current_data$merged_table %>%
       {
@@ -102,13 +106,17 @@ createReactiveData <- function(input, session, combined_inputs) {
           .
         }
         
-        # Then apply other filters
-        tmp <- dplyr::filter(
-          tmp,
-          !!sym(combined_inputs$factor_grouping) %in% combined_inputs$factor_levels,
-          treatment %in% combined_inputs$treatments,
-          cultivar %in% combined_inputs$cultivars
-        )
+        # Grouping levels — skip when "none" or levels empty (#8/#10)
+        if (use_grouping && length(factor_levels) > 0) {
+          tmp <- dplyr::filter(tmp, !!sym(grouping) %in% factor_levels)
+        }
+        # Treatment / cultivar — skip filter when selector empty so 1-level projects still plot
+        if (length(treatments) > 0 && "treatment" %in% names(tmp)) {
+          tmp <- dplyr::filter(tmp, treatment %in% treatments)
+        }
+        if (length(cultivars) > 0 && "cultivar" %in% names(tmp)) {
+          tmp <- dplyr::filter(tmp, cultivar %in% cultivars)
+        }
         
         # Drop unused factor levels early to keep downstream cardinality correct
         tmp <- droplevels(tmp)
@@ -117,7 +125,7 @@ createReactiveData <- function(input, session, combined_inputs) {
     })
     
     # Handle outliers
-    if (!combined_inputs$outliers_plot) {
+    if (!isTRUE(combined_inputs$outliers_plot) && "outlier" %in% names(filtered)) {
       filtered <- filtered %>% filter(!outlier)
     }
     

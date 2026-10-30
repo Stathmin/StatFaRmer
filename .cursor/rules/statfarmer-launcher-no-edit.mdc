@@ -1,0 +1,24 @@
+---
+description: Never edit StatFaRmer launcher/install scripts unless the user explicitly asks
+alwaysApply: true
+---
+
+# StatFaRmer launcher files — do not edit
+
+**Never modify** these files unless the user **explicitly** requests changes to that specific file in the current message:
+
+- `install.R` (repository root)
+- `just_shiny.R`
+- `launch_statfarmer.R`
+
+Also do not edit `src/install.R` unless the user explicitly names it.
+
+## Default workflow
+
+- Prefer **data-only** work: `data/**`, project CSVs, zips, `groups.xlsx`, per-project `config.json`.
+- Do **not** change StatFaRmer application code (`shiny/`, wizard, utils, etc.) unless the user explicitly asks.
+- Do **not** edit handmade CSVs or metadata for **other** experiments than the one named in the task.
+
+## If a task seems to require launcher changes
+
+Explain what would need to change and ask the user to edit those files themselves or to give explicit permission for that file.

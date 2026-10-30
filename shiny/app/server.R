@@ -52,7 +52,13 @@ source(here('shiny', 'app', 'reactive_downloads.R'))
 
 # Load scientific modules
 source(here('shiny', 'app', 'module_effect_sizes.R'))
+# Curve-bridge helpers before Growth Summaries (safe if already sourced from ui.R)
+source(here('shiny', 'common', 'txy_parse.R'))
+source(here('shiny', 'common', 'plant_collapse.R'))
 source(here('shiny', 'app', 'module_growth_summaries.R'))
+source(here('shiny', 'common', 'spatial_residualize.R'))
+source(here('shiny', 'common', 'blup_ranking.R'))
+source(here('shiny', 'app', 'module_blup_ranking.R'))
 
 # Get available projects
 available_projects <- getAvailableProjects()
@@ -117,6 +123,7 @@ server <- function(input, output, session) {
   reactive_ui$updateProjectSelections()
   reactive_ui$updateFactorLevels(projectData)
   reactive_ui$updateCultivars(projectData)
+  reactive_ui$updateTimestampGroupsFiltered(projectData)
   reactive_ui$updateCombinedInputsInit()
   reactive_ui$updateCombinedInputsSubmit()
   
@@ -143,6 +150,32 @@ server <- function(input, output, session) {
   # Effect Sizes Module
   effectSizesServer("effect_sizes", filteredData, analysisResults, combined_inputs)
   
-  # Growth Summaries Module
-  growthSummariesServer("growth_summaries", filteredData, combined_inputs, projectData)
+  # Growth Summaries Module (returns plant_summaries for BLUP/DR sidecars)
+  growth_summaries_mod <- growthSummariesServer(
+    "growth_summaries",
+    filteredData,
+    combined_inputs,
+    projectData
+  )
+
+  # Trait DR Module (plant × traits PCA → PC hyper-traits)
+  trait_dr_mod <- traitReductionServer(
+    "trait_reduction",
+    growth_summaries_mod$plant_summaries,
+    combined_inputs
+  )
+
+  # Prefer DR-augmented plants only while PCs still match current Growth Summaries
+  plant_for_blup <- reactive({
+    ps <- growth_summaries_mod$plant_summaries()
+    with_pcs <- tryCatch(trait_dr_mod$plant_with_pcs(), error = function(e) NULL)
+    .sf_dr_plants_for_blup(ps, with_pcs)
+  })
+
+  # BLUP Module (plant-collapsed traits / optional PC hyper-traits)
+  blupRankingServer(
+    "blup_ranking",
+    plant_for_blup,
+    combined_inputs
+  )
 }

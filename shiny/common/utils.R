@@ -14,21 +14,25 @@ suppressed <- try({
 #' Get available projects with deploy restrictions
 #' @return Vector of available project names
 getAvailableProjects <- function() {
+  is_deploy <- tolower(Sys.getenv('STATFARMER_DEPLOY', 'false')) %in% c('1', 'true', 'yes')
+  all_projects <- list.dirs(here('data'), recursive = FALSE, full.names = FALSE)
+  all_projects <- all_projects[!grepl('^\\.', all_projects)]
+  if (!is_deploy) {
+    return(all_projects)
+  }
+
   # Load deploy config if it exists
   deploy_config_path <- here('config', 'deploy_config.R')
   if (file.exists(deploy_config_path)) {
     source(deploy_config_path)
     # Filter projects by allowed_projects if in deploy mode
     if (exists('allowed_projects')) {
-      all_projects <- list.dirs(here('data'), recursive = FALSE, full.names = FALSE)
-      all_projects <- all_projects[!grepl('^\\.', all_projects)]
       return(intersect(all_projects, allowed_projects))
     }
   }
   
-  # Return all projects if no deploy restrictions
-  all_projects <- list.dirs(here('data'), recursive = FALSE, full.names = FALSE)
-  return(all_projects[!grepl('^\\.', all_projects)])
+  # Deploy mode without allow-list: return all projects.
+  return(all_projects)
 }
 
 #' Select default project honoring environment override
@@ -324,41 +328,10 @@ prepareUISelections <- function(merged_table) {
   cultivar_col <- if ('cultivar' %in% names(merged_table)) 'cultivar' else if ('genotype' %in% names(merged_table)) 'genotype' else NULL
   cultivars <- if (!is.null(cultivar_col)) getUnique(merged_table, cultivar_col) else character(0)
   
-  # Use dbscan_cluster as timestamp groups
   # Use timestamp_group for selection labels; backed by dbscan_cluster
-  # Ensure timestamp_group exists (created in main.R)
-  if ('timestamp_group' %in% names(merged_table)) {
-    timestamp_groups <- getUnique(merged_table, 'timestamp_group')
-  } else if ('timestamp' %in% names(merged_table)) {
-    # Derive groups directly from timestamps when group column is absent
-    timestamp_groups <- sort(unique(merged_table$timestamp))
-  } else {
-    timestamp_groups <- as.POSIXct(character(0))
-  }
-  # Derive cluster label per timestamp_group to avoid length mismatch (only if both columns exist)
-  if (all(c('timestamp_group','dbscan_cluster') %in% names(merged_table))) {
-    tg_df <- merged_table %>%
-      dplyr::select(timestamp_group, dbscan_cluster) %>%
-      dplyr::distinct() %>%
-      dplyr::arrange(timestamp_group)
-    # Align clusters to timestamp_groups order
-    cluster_labels <- tg_df %>%
-      dplyr::group_by(timestamp_group) %>%
-      dplyr::summarise(dbscan_cluster = dplyr::first(dbscan_cluster), .groups = 'drop') %>%
-      dplyr::arrange(timestamp_group) %>%
-      dplyr::pull(dbscan_cluster)
-    named_timestamp_groups <- timestamp_groups
-    names(named_timestamp_groups) <- paste(
-      format(timestamp_groups, format = '%m-%d %H:%M'),
-      sprintf('(cluster %s)', as.character(cluster_labels))
-    )
-  } else {
-    # Fallback: labels without cluster info
-    named_timestamp_groups <- timestamp_groups
-    if (length(named_timestamp_groups) > 0) {
-      names(named_timestamp_groups) <- format(timestamp_groups, format = '%m-%d %H:%M')
-    }
-  }
+  ts_named <- buildNamedTimestampGroups(merged_table)
+  timestamp_groups <- ts_named$timestamp_groups
+  named_timestamp_groups <- ts_named$named_timestamp_groups
   
   # Named timestamp groups prepared above
   
@@ -374,6 +347,43 @@ prepareUISelections <- function(merged_table) {
     named_timestamp_groups = named_timestamp_groups,
     out_variables = out_variables
   ))
+}
+
+#' Build timestamp_group choices (+ labels) for a (possibly filtered) table.
+#' Used by project UI and by live filtering when treatments/cultivars change (#9).
+#' @param merged_table data.frame
+#' @return list(timestamp_groups, named_timestamp_groups)
+buildNamedTimestampGroups <- function(merged_table) {
+  if (is.null(merged_table) || !is.data.frame(merged_table) || nrow(merged_table) == 0) {
+    return(list(timestamp_groups = as.POSIXct(character(0)), named_timestamp_groups = as.POSIXct(character(0))))
+  }
+  if ('timestamp_group' %in% names(merged_table)) {
+    timestamp_groups <- getUnique(merged_table, 'timestamp_group')
+  } else if ('timestamp' %in% names(merged_table)) {
+    timestamp_groups <- sort(unique(merged_table$timestamp))
+  } else {
+    timestamp_groups <- as.POSIXct(character(0))
+  }
+  if (all(c('timestamp_group', 'dbscan_cluster') %in% names(merged_table))) {
+    cluster_labels <- merged_table %>%
+      dplyr::select(timestamp_group, dbscan_cluster) %>%
+      dplyr::distinct() %>%
+      dplyr::group_by(timestamp_group) %>%
+      dplyr::summarise(dbscan_cluster = dplyr::first(dbscan_cluster), .groups = 'drop') %>%
+      dplyr::arrange(timestamp_group) %>%
+      dplyr::pull(dbscan_cluster)
+    named_timestamp_groups <- timestamp_groups
+    names(named_timestamp_groups) <- paste(
+      format(timestamp_groups, format = '%m-%d %H:%M'),
+      sprintf('(cluster %s)', as.character(cluster_labels))
+    )
+  } else {
+    named_timestamp_groups <- timestamp_groups
+    if (length(named_timestamp_groups) > 0) {
+      names(named_timestamp_groups) <- format(timestamp_groups, format = '%m-%d %H:%M')
+    }
+  }
+  list(timestamp_groups = timestamp_groups, named_timestamp_groups = named_timestamp_groups)
 }
 
 # =============================================================================

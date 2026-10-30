@@ -36,15 +36,32 @@ createReactiveUI <- function(input, output, session, combined_inputs, projectUIS
       }
       updateSelectInput(session, 'tukey_factors', choices = tukey_choices, selected = tukey_selected)
       
-      # Update color by (hide Group Letter)
-      updateSelectInput(session, 'color_by', 
-                       choices = setdiff(selections$anova_factors, 'unit'), #'Group Letter' = 'group_letter' is hidden
+      # Update color by (restore Group Letter for CLD coloring / labels — #12)
+      color_choices <- c(setdiff(selections$anova_factors, 'unit'), 'Group Letter' = 'group_letter', 'None' = 'none')
+      updateSelectInput(session, 'color_by',
+                       choices = color_choices,
                        selected = if ('treatment' %in% selections$anova_factors) 'treatment' else setdiff(selections$anova_factors, 'unit')[1])
       
-      # Update grouping factor
-      updateSelectInput(session, 'factor_grouping', 
-                       choices = setdiff(selections$anova_factors, 'unit'),
-                       selected = if ('treatment' %in% selections$anova_factors) 'treatment' else setdiff(selections$anova_factors, 'unit')[1])
+      # Update grouping factor — allow none so x-axis is not forced (#10)
+      grouping_choices <- c('None' = 'none', setdiff(selections$anova_factors, 'unit'))
+      n_treat <- length(selections$treatments)
+      default_grouping <- if (n_treat <= 1L && 'cultivar' %in% selections$anova_factors) {
+        'cultivar'
+      } else if ('treatment' %in% selections$anova_factors && n_treat > 1L) {
+        'treatment'
+      } else {
+        setdiff(selections$anova_factors, 'unit')[1]
+      }
+      updateSelectInput(session, 'factor_grouping',
+                       choices = grouping_choices,
+                       selected = default_grouping)
+      
+      # Single-treatment experiments: default facet without useless treatment strip (#8)
+      if (n_treat <= 1L) {
+        updateTextInput(session, 'facet_formula', value = '~ dbscan_cluster')
+      } else {
+        updateTextInput(session, 'facet_formula', value = 'treatment ~ dbscan_cluster')
+      }
       
       # Update treatments
       updateSelectInput(session, 'treatments', 
@@ -89,19 +106,15 @@ createReactiveUI <- function(input, output, session, combined_inputs, projectUIS
   updateFactorLevels <- function(projectData) {
     observeEvent(list(input$factor_grouping, input$selected_project), {
       current_data <- projectData()
-      if (nrow(current_data$merged_table) > 0) {
+      if (identical(input$factor_grouping, "none") || is.null(input$factor_grouping) ||
+          !nzchar(input$factor_grouping)) {
+        updateSelectizeInput(session, 'factor_levels', choices = character(0), selected = character(0), server = TRUE)
+        return()
+      }
+      if (nrow(current_data$merged_table) > 0 && input$factor_grouping %in% names(current_data$merged_table)) {
         unique_groups <- getUnique(current_data$merged_table, input$factor_grouping)
         
         if (!setequal(unique_groups, input$factor_levels)) {
-          isolate(
-            updateSelectizeInput(
-              session,
-              'factor_levels',
-              choices = c(),
-              selected = c(),
-              server = TRUE
-            )
-          )
           updateSelectizeInput(
             session,
             'factor_levels',
@@ -116,39 +129,58 @@ createReactiveUI <- function(input, output, session, combined_inputs, projectUIS
   
   # Update cultivars when factor levels change
   updateCultivars <- function(projectData) {
-    observeEvent(c(input$factor_levels, input$factor_grouping), {
-      # Avoid clearing cultivars while factor_levels is being reset during project change
-      req(!is.null(input$factor_grouping))
-      req(length(input$factor_levels) > 0)
+    observeEvent(c(input$factor_levels, input$factor_grouping, input$treatments), {
       current_data <- projectData()
-      if (nrow(current_data$merged_table) > 0) {
-        unique_cultivars <- current_data$merged_table %>%
-          filter(!!sym(input$factor_grouping) %in% input$factor_levels) %>%
-          dplyr::select(dplyr::all_of('cultivar')) %>%
-          dplyr::distinct() %>%
-          dplyr::arrange(cultivar) %>%
-          dplyr::pull(1)
-        
-        if (!setequal(unique_cultivars, input$cultivars)) {
-          isolate(
-            updateSelectizeInput(
-              session,
-              'cultivars',
-              choices = c(),
-              selected = c(),
-              server = TRUE
-            )
-          )
-          updateSelectizeInput(
-            session,
-            'cultivars',
-            choices = unique_cultivars,
-            selected = unique_cultivars,
-            server = TRUE
-          )
-        }
+      if (nrow(current_data$merged_table) == 0) return()
+      tmp <- current_data$merged_table
+      if (length(input$treatments) > 0 && "treatment" %in% names(tmp)) {
+        tmp <- dplyr::filter(tmp, treatment %in% input$treatments)
+      }
+      if (!identical(input$factor_grouping, "none") && !is.null(input$factor_grouping) &&
+          nzchar(input$factor_grouping) && input$factor_grouping %in% names(tmp) &&
+          length(input$factor_levels) > 0) {
+        tmp <- dplyr::filter(tmp, !!sym(input$factor_grouping) %in% input$factor_levels)
+      }
+      unique_cultivars <- tmp %>%
+        dplyr::distinct(cultivar) %>%
+        dplyr::arrange(cultivar) %>%
+        dplyr::pull(1)
+      
+      if (!setequal(unique_cultivars, input$cultivars)) {
+        updateSelectizeInput(
+          session,
+          'cultivars',
+          choices = unique_cultivars,
+          selected = unique_cultivars,
+          server = TRUE
+        )
       }
     }, ignoreInit = FALSE, priority = 100)
+  }
+
+  # Restrict time-cluster picker to clusters present under current treatment/cultivar filters (#9)
+  updateTimestampGroupsFiltered <- function(projectData) {
+    observeEvent(list(input$treatments, input$cultivars, input$selected_project), {
+      current_data <- projectData()
+      mt <- current_data$merged_table
+      if (is.null(mt) || nrow(mt) == 0) return()
+      sub <- mt
+      if (length(input$treatments) > 0 && "treatment" %in% names(sub)) {
+        sub <- dplyr::filter(sub, treatment %in% input$treatments)
+      }
+      if (length(input$cultivars) > 0 && "cultivar" %in% names(sub)) {
+        sub <- dplyr::filter(sub, cultivar %in% input$cultivars)
+      }
+      named <- buildNamedTimestampGroups(sub)$named_timestamp_groups
+      if (length(named) == 0) return()
+      cur <- isolate(input$timestamp_groups)
+      keep <- intersect(as.character(cur), as.character(unname(named)))
+      if (length(keep) == 0) {
+        n <- length(named)
+        keep <- if (n >= 3) as.character(unname(named)[c(1, ceiling(n / 2), n)]) else as.character(unname(named))
+      }
+      shinyWidgets::updatePickerInput(session, 'timestamp_groups', choices = named, selected = keep)
+    }, ignoreInit = TRUE, priority = 90)
   }
   
   # Create initial combined inputs
@@ -265,6 +297,7 @@ createReactiveUI <- function(input, output, session, combined_inputs, projectUIS
     updateProjectSelections = updateProjectSelections,
     updateFactorLevels = updateFactorLevels,
     updateCultivars = updateCultivars,
+    updateTimestampGroupsFiltered = updateTimestampGroupsFiltered,
     createInitialCombinedInputs = createInitialCombinedInputs,
     updateCombinedInputsInit = updateCombinedInputsInit,
     updateCombinedInputsSubmit = updateCombinedInputsSubmit

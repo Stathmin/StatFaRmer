@@ -18,7 +18,16 @@ source(here('shiny', 'common', 'utils.R'))
 
 # Load new modules
 source(here('shiny', 'app', 'module_effect_sizes.R'))
+# Curve-bridge helpers (Growth Summaries → BLUP/DR); txy_parse before plant_collapse
+source(here('shiny', 'common', 'txy_parse.R'))
+source(here('shiny', 'common', 'plant_collapse.R'))
 source(here('shiny', 'app', 'module_growth_summaries.R'))
+source(here('shiny', 'common', 'spatial_residualize.R'))
+source(here('shiny', 'common', 'blup_ranking.R'))
+source(here('shiny', 'app', 'module_blup_ranking.R'))
+source(here('shiny', 'common', 'trait_reduction.R'))
+source(here('shiny', 'app', 'module_trait_reduction.R'))
+
 
 # Get available projects
 available_projects <- getAvailableProjects()
@@ -34,8 +43,13 @@ default_project <- if (!is.null(getOption('statfarmer.project'))) {
 data_list <- tryCatch({
   loadProjectData(default_project)
 }, error = function(e) {
-  # Fallback to old method if project-specific files don't exist
-  loadShinyData()
+  stop(
+    paste(
+      "Failed to load selected project data:",
+      conditionMessage(e)
+    ),
+    call. = FALSE
+  )
 })
 
 merged_table <- data_list$merged_table
@@ -99,15 +113,15 @@ ui <- fluidPage(
       selectInput(
         'color_by',
         'Color by:',
-        choices = c(ui_selections$anova_factors, 'Group Letter' = 'group_letter'),
+        choices = c(ui_selections$anova_factors, 'Group Letter' = 'group_letter', 'None' = 'none'),
         selected = 'treatment'
       ),
       
-      # Grouping factor selection
+      # Grouping factor selection (None = no forced x-axis factor — #10)
       selectInput(
         'factor_grouping',
         'Grouping factor:',
-        choices = ui_selections$anova_factors,
+        choices = c('None' = 'none', ui_selections$anova_factors),
         selected = 'treatment'
       ),
       
@@ -165,12 +179,17 @@ ui <- fluidPage(
         selected = ui_selections$out_variables[1]
       ),
       
-      # Facet formula input
+      # Facet formula input (one-sided / `. ~ x` wraps into columns — #14)
       textInput(
         'facet_formula',
         'Facet formula:',
         value = 'treatment ~ dbscan_cluster',
-        placeholder = 'treatment ~ dbscan_cluster'
+        placeholder = 'treatment ~ dbscan_cluster  |  ~ cultivar'
+      ),
+      numericInput(
+        'facet_ncol',
+        'Facet wrap columns (one-sided formulas):',
+        value = 2, min = 1, max = 8, step = 1
       ),
       
       # Plot options
@@ -273,7 +292,9 @@ ui <- fluidPage(
         
         # New scientific modules
         effectSizesUI("effect_sizes"),
-        growthSummariesUI("growth_summaries")
+        growthSummariesUI("growth_summaries"),
+        blupRankingUI("blup_ranking"),
+        traitReductionUI("trait_reduction")
       )
     )
   )
