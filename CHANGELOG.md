@@ -27,5 +27,5 @@ All notable changes to StatFaRmer are documented here.
 - **!!! THIS CODE SHOULD BE CHECKED BY A HUMAN PLZ !!!** — biology text, GLI-bin maps, and polarity heuristics need human review before citation.
 
 ### Known issues (tracked on GitHub)
-- Main `distPlot` with ~300+ cultivars + several timestamps / timeseries: legend/plot overflow and cropping.
-- Single time-cluster (no timeseries): main tab shows a small subset of cultivars as boxplots instead of violins.
+- Main `distPlot` with ~300+ cultivars + several timestamps / timeseries: legend/plot overflow and cropping — [#15](https://github.com/Stathmin/StatFaRmer/issues/15).
+- Single time-cluster (no timeseries): main tab shows a small subset of cultivars as boxplots instead of violins — [#16](https://github.com/Stathmin/StatFaRmer/issues/16).
