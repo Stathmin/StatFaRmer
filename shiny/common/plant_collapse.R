@@ -344,3 +344,49 @@ collapseManyTraitsBySelectedTimes <- function(data,
   attr(out, "time_values") <- time_values
   out
 }
+
+#' Numeric PlantEye / phenotype columns eligible for Growth Summaries multi-trait collapse.
+.sf_gs_phenotype_candidates <- function(data) {
+  if (is.null(data) || !is.data.frame(data) || ncol(data) < 1L) {
+    return(character(0))
+  }
+  num <- names(data)[vapply(data, is.numeric, logical(1))]
+  drop <- c(
+    .sf_plant_id_cols(data),
+    "dbscan_cluster", "n_obs", "n_times", "outlier", "time_numeric",
+    "genotype", "g_alias", "var", "label", "sort_name"
+  )
+  sort(setdiff(num, drop))
+}
+
+#' Default phenotype panel for multi-trait GS (biomass / NDVI / size first).
+.sf_gs_default_panel_traits <- function(candidates, focus_trait = NULL, max_n = 12L) {
+  candidates <- as.character(candidates)
+  pref <- c(
+    "digital_biomass_mm3", "ndvi_average", "gli_average",
+    "x3d_leaf_area_mm2", "projected_leaf_area_mm2",
+    "plant_height_averaged_mm", "plant_height_max_mm",
+    "convex_hull_area_mm2", "voxel_volume_total_mm3",
+    "canopy_light_penetration_depth_mm"
+  )
+  picked <- unique(c(
+    intersect(as.character(focus_trait), candidates),
+    intersect(pref, candidates),
+    candidates
+  ))
+  head(picked, max(1L, as.integer(max_n)))
+}
+
+#' Resolve y column for GS plot: prefer focus__metric, else first *__metric, else bare metric.
+.sf_gs_metric_column <- function(df, metric, focus_trait = NULL) {
+  if (is.null(df) || !is.data.frame(df)) return(NA_character_)
+  metric <- as.character(metric)[[1L]]
+  if (!is.null(focus_trait) && nzchar(as.character(focus_trait)[[1L]])) {
+    named <- paste0(as.character(focus_trait)[[1L]], "__", metric)
+    if (named %in% names(df)) return(named)
+  }
+  hit <- grep(paste0("__", metric, "$"), names(df), value = TRUE)
+  if (length(hit) >= 1L) return(hit[[1L]])
+  if (metric %in% names(df)) return(metric)
+  NA_character_
+}

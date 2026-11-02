@@ -1,6 +1,8 @@
 # Growth Summaries Module
-# Calculates AUC, time-to-peak, growth rates, and other temporal metrics
-# Curve bridge: metrics use user-selected time clusters only (not full series).
+# Calculates AUC, peak, growth_rate, last (and optional mean) over selected times.
+# Multi-trait panel → trait__metric columns for Trait DR / BLUP (soy-325 style).
+
+`%||%` <- function(a, b) if (!is.null(a)) a else b
 
 #' Map combined_inputs timestamp selection to dbscan_cluster values.
 #' @param data Plant × time data.frame (e.g. merged_table)
@@ -30,54 +32,67 @@
 #' @param id Module ID
 growthSummariesUI <- function(id) {
   ns <- NS(id)
-  
+
   tabPanel(
     "Growth Summaries",
     fluidRow(
       column(12,
         h3("Growth Trajectory Summaries"),
-        p("Summarize growth dynamics over the currently selected time points: AUC, peak, growth rates, and timing."),
+        p("Collapse selected times to named plant-level metrics (trait__auc / __peak / __growth_rate / __last) for Trait DR and BLUP."),
         tags$div(
           class = "alert alert-info",
           role = "alert",
-          strong("Path to BLUP / Trait DR: "),
-          "Click Calculate Summaries to build one row per plant, then open Trait DR (optional PCA) or BLUP to rank genotypes. Raw multi-time rows are blocked on those tabs."
+          strong("Path to multi-trait PCA / BLUP: "),
+          "Pick several PlantEye traits below → Calculate Summaries → Trait DR loadings span those traits (not just one sidebar curve)."
         ),
         hr()
       )
     ),
-    
+
     fluidRow(
       column(4,
         wellPanel(
           h4("Settings"),
-          p(strong("Growth variable:"), textOutput(ns("current_trait"), inline = TRUE)),
+          p(strong("Focus trait (plots):"), textOutput(ns("current_trait"), inline = TRUE)),
           br(),
-          selectInput(ns("growth_grouping"), "Group by:", 
+          selectInput(
+            ns("panel_traits"),
+            "Traits for plant panel (Trait DR / BLUP):",
+            choices = c(),
+            multiple = TRUE,
+            selectize = TRUE
+          ),
+          helpText(tags$small(
+            "Each selected trait becomes columns like digital_biomass_mm3__auc. ",
+            "Focus trait (left bar) is always included. Same basis as soy-325 multi-trait PCA."
+          )),
+          selectInput(ns("growth_grouping"), "Group by:",
                      choices = c(), multiple = TRUE),
           hr(),
           h5("Metrics to calculate:"),
           checkboxInput(ns("calc_auc"), "Area Under Curve (AUC)", value = TRUE),
-          checkboxInput(ns("calc_peak"), "Peak value & timing", value = TRUE),
-          checkboxInput(ns("calc_rate"), "Growth rate (slope)", value = TRUE),
-          checkboxInput(ns("calc_relative"), "Relative growth rate", value = FALSE),
+          checkboxInput(ns("calc_peak"), "Peak value", value = TRUE),
+          checkboxInput(ns("calc_rate"), "Growth rate (Δy / Δdays)", value = TRUE),
+          checkboxInput(ns("calc_last"), "Endpoint (last selected time)", value = TRUE),
+          checkboxInput(ns("calc_mean"), "Mean over selected times", value = FALSE),
           helpText(
             tags$small(
-              tags$strong("Selected times only:"), " collapse uses the main timestamp filter, not the full series.", tags$br(),
+              tags$strong("Selected times only:"), " collapse uses the main timestamp filter.", tags$br(),
               tags$strong("Next steps:"), " Trait DR → PC hyper-traits, then BLUP → genotype ranks."
             )
           ),
           hr(),
-          actionButton(ns("calculate_growth"), "Calculate Summaries", 
+          actionButton(ns("calculate_growth"), "Calculate Summaries",
                       class = "btn-primary", icon = icon("chart-line"))
         )
       ),
-      
+
       column(8,
         tabsetPanel(
           tabPanel("Summary Table",
             br(),
-            p("One row per plant over the selected time clusters. Download CSV or continue to Trait DR / BLUP."),
+            p("One row per plant; columns are trait__metric. Download CSV or continue to Trait DR / BLUP."),
+            uiOutput(ns("summary_note")),
             DT::dataTableOutput(ns("growth_summary_table")),
             br(),
             downloadButton(ns("download_summaries"), "Download CSV")
@@ -94,21 +109,16 @@ growthSummariesUI <- function(id) {
             br(),
             h4("Growth Summary Metrics"),
             tags$ul(
-              tags$li(strong("AUC (Area Under Curve):"), " Total accumulated growth over selected times. Higher AUC = more total growth."),
-              tags$li(strong("Peak value:"), " Maximum value reached during the selected observation period."),
-              tags$li(strong("Time to peak:"), " When maximum value was reached (early/late grower)."),
-              tags$li(strong("Growth rate (slope):"), " Linear rate of increase (units per time)."),
-              tags$li(strong("Relative growth rate (RGR):"), " Proportional growth rate: (ln(final) - ln(initial)) / time.")
+              tags$li(strong("AUC:"), " Trapezoidal area under each plant’s trait-vs-time curve (selected times; time in hours)."),
+              tags$li(strong("Peak:"), " Maximum value in the selected window."),
+              tags$li(strong("Growth rate:"), " (last − first) / Δdays over selected times."),
+              tags$li(strong("Last:"), " Value at the last selected timestamp."),
+              tags$li(strong("Mean:"), " Mean of selected time points (explicit metric only — not silent DR default).")
             ),
             br(),
-            h5("Why use growth summaries?"),
-            p("Growth summaries reduce time-series data to interpretable metrics over the selected time clusters. This allows:"),
-            tags$ul(
-              tags$li("Fast ANOVA on summarized values (no time factor)"),
-              tags$li("Direct interpretation: 'Treatment X increased total growth by 25%'"),
-              tags$li("Plant-level curve traits for BLUP / Trait DR (one row per plant)"),
-              tags$li("Required first step before Calculate BLUP or Calculate PCA")
-            )
+            h5("Why multi-trait?"),
+            p("Trait DR PCA needs several phenotype columns. Collapsing many traits to trait__metric ",
+              "matches the offline soy-325 suite so loadings can mix biomass, NDVI, hull, GLI, etc.")
           )
         )
       )
@@ -124,14 +134,12 @@ growthSummariesUI <- function(id) {
 #' @return List with `plant_summaries` / `growth_summaries` reactives (one row per plant)
 growthSummariesServer <- function(id, filteredData, combined_inputs, projectData) {
   moduleServer(id, function(input, output, session) {
-    
-    # Display current trait
+
     output$current_trait <- renderText({
       req(combined_inputs$out_variables)
       combined_inputs$out_variables
     })
-    
-    # Update choices — never preselect columns absent from this project (soy-325: no treatment)
+
     observe({
       req(combined_inputs$anova_factors)
       choices <- setdiff(combined_inputs$anova_factors, "dbscan_cluster")
@@ -141,16 +149,40 @@ growthSummariesServer <- function(id, filteredData, combined_inputs, projectData
                        choices = choices,
                        selected = selected)
     })
-    
-    # Calculate growth summaries over selected times only (curve bridge)
+
+    # Populate multi-trait panel from current filtered / project table
+    observe({
+      data <- tryCatch(filteredData(), error = function(e) NULL)
+      if (is.null(data) || !is.data.frame(data) || nrow(data) < 1L) {
+        pd <- tryCatch(projectData(), error = function(e) NULL)
+        if (!is.null(pd) && is.data.frame(pd$merged_table)) {
+          data <- pd$merged_table
+        }
+      }
+      cands <- .sf_gs_phenotype_candidates(data)
+      focus <- tryCatch(combined_inputs$out_variables, error = function(e) NULL)
+      if (length(cands) < 1L) {
+        updateSelectInput(session, "panel_traits", choices = character(0), selected = character(0))
+        return()
+      }
+      default <- .sf_gs_default_panel_traits(cands, focus_trait = focus, max_n = 12L)
+      cur <- isolate(input$panel_traits)
+      keep <- intersect(cur, cands)
+      selected <- if (length(keep) >= 1L) {
+        unique(c(intersect(as.character(focus), cands), keep))
+      } else {
+        default
+      }
+      updateSelectInput(session, "panel_traits", choices = cands, selected = selected)
+    })
+
     growth_summaries <- eventReactive(input$calculate_growth, {
-      req(filteredData(), combined_inputs$out_variables)
+      req(filteredData())
       req(nrow(filteredData()) > 0)
 
-      metric <- combined_inputs$out_variables
+      focus <- combined_inputs$out_variables
       data <- filteredData()
 
-      # Explicit selected clusters from main timestamp filter (same as analysis)
       selected_clusters <- NULL
       if (!is.null(projectData()) && nrow(projectData()$merged_table) > 0) {
         selected_clusters <- .sf_selected_dbscan_clusters(
@@ -163,87 +195,95 @@ growthSummariesServer <- function(id, filteredData, combined_inputs, projectData
       }
       req(length(selected_clusters) >= 1L)
 
-      withProgress(message = "Collapsing plants over selected times…", value = 0.15, {
-        metrics <- "mean"
-        if (isTRUE(input$calc_auc)) {
-          metrics <- c(metrics, "auc")
-        }
-        if (isTRUE(input$calc_peak)) {
-          metrics <- c(metrics, "peak")
-        }
+      traits <- unique(as.character(input$panel_traits))
+      traits <- intersect(traits, names(data))
+      if (!is.null(focus) && nzchar(as.character(focus)[[1L]]) &&
+          as.character(focus)[[1L]] %in% names(data)) {
+        traits <- unique(c(as.character(focus)[[1L]], traits))
+      }
+      if (length(traits) < 1L) {
+        traits <- intersect(.sf_gs_phenotype_candidates(data), names(data))
+        traits <- head(traits, 8L)
+      }
+      shiny::validate(shiny::need(
+        length(traits) >= 1L,
+        "Select at least one phenotype for the plant panel."
+      ))
 
-        incProgress(0.25, detail = paste(length(selected_clusters), "time cluster(s)"))
+      metrics <- character(0)
+      if (isTRUE(input$calc_auc)) metrics <- c(metrics, "auc")
+      if (isTRUE(input$calc_peak)) metrics <- c(metrics, "peak")
+      if (isTRUE(input$calc_rate)) metrics <- c(metrics, "growth_rate")
+      if (isTRUE(input$calc_last)) metrics <- c(metrics, "last")
+      if (isTRUE(input$calc_mean)) metrics <- c(metrics, "mean")
+      shiny::validate(shiny::need(
+        length(metrics) >= 1L,
+        "Enable at least one metric (AUC / peak / growth_rate / last / mean)."
+      ))
 
-        # Collapse via shared helper — selected times only, not full merged_table
-        summaries <- collapsePlantsBySelectedTimes(
+      withProgress(message = "Collapsing multi-trait plant panel…", value = 0.15, {
+        incProgress(
+          0.25,
+          detail = sprintf("%d traits × %s | %d time cluster(s)",
+                           length(traits), paste(metrics, collapse = "+"),
+                           length(selected_clusters))
+        )
+
+        summaries <- collapseManyTraitsBySelectedTimes(
           data = data,
-          trait = metric,
+          traits = traits,
           time_col = "dbscan_cluster",
           time_values = selected_clusters,
           metrics = metrics
         )
 
-        # Series restricted to selected clusters for rate / timing extras
-        series <- data %>%
-          dplyr::filter(dbscan_cluster %in% selected_clusters) %>%
-          dplyr::arrange(timestamp_group)
+        attr(summaries, "focus_trait") <- if (!is.null(focus)) as.character(focus)[[1L]] else NA_character_
+        attr(summaries, "panel_traits") <- traits
+        attr(summaries, "gs_metrics") <- metrics
+        attr(summaries, "selected_clusters") <- selected_clusters
 
-        base_stats <- series %>%
-          dplyr::group_by(unit) %>%
-          dplyr::summarise(
-            n_obs = dplyr::n(),
-            first_value = dplyr::first(.data[[metric]]),
-            final_value = dplyr::last(.data[[metric]]),
-            .groups = "drop"
-          )
-        summaries <- summaries %>% dplyr::left_join(base_stats, by = "unit")
-
-        if (isTRUE(input$calc_peak) && "timestamp_group" %in% names(series)) {
-          t0 <- min(series$timestamp_group, na.rm = TRUE)
-          peak_timing <- series %>%
-            dplyr::group_by(unit) %>%
-            dplyr::slice_max(.data[[metric]], n = 1, with_ties = FALSE) %>%
-            dplyr::summarise(
-              time_to_peak = as.numeric(difftime(timestamp_group, t0, units = "days")),
-              .groups = "drop"
-            )
-          summaries <- summaries %>% dplyr::left_join(peak_timing, by = "unit")
+        # Optional n_obs for focus trait series
+        if ("unit" %in% names(data) && "unit" %in% names(summaries)) {
+          series <- data[data$dbscan_cluster %in% selected_clusters, , drop = FALSE]
+          n_tbl <- as.data.frame(table(series$unit), stringsAsFactors = FALSE)
+          names(n_tbl) <- c("unit", "n_obs")
+          n_tbl$unit <- as.character(n_tbl$unit)
+          summaries$unit <- as.character(summaries$unit)
+          summaries <- merge(summaries, n_tbl, by = "unit", all.x = TRUE)
         }
 
-        if (isTRUE(input$calc_rate)) {
-          rate_data <- series %>%
-            dplyr::group_by(unit) %>%
-            dplyr::summarise(
-              time_range = as.numeric(difftime(
-                max(timestamp_group), min(timestamp_group),
-                units = "days"
-              )),
-              value_change = dplyr::last(.data[[metric]]) - dplyr::first(.data[[metric]]),
-              growth_rate = value_change / time_range,
-              .groups = "drop"
-            )
-          summaries <- summaries %>%
-            dplyr::left_join(rate_data[, c("unit", "growth_rate")], by = "unit")
-        }
-
-        if (isTRUE(input$calc_relative)) {
-          summaries <- summaries %>%
-            dplyr::mutate(
-              rgr = (log(final_value) - log(first_value)) / n_obs
-            )
-        }
-
-        incProgress(0.5, detail = paste(nrow(summaries), "plants"))
+        incProgress(0.5, detail = paste(nrow(summaries), "plants |",
+                                        length(attr(summaries, "metric_cols")), "metric cols"))
         summaries
       })
     })
-    
-    # Render summary table
+
+    output$summary_note <- renderUI({
+      if (!isTruthy(input$calculate_growth) || input$calculate_growth < 1L) {
+        return(NULL)
+      }
+      gs <- tryCatch(growth_summaries(), error = function(e) NULL)
+      if (is.null(gs)) return(NULL)
+      mc <- attr(gs, "metric_cols")
+      tr <- attr(gs, "panel_traits")
+      tags$div(
+        class = "alert alert-success",
+        role = "alert",
+        sprintf(
+          "%d plants · %d traits · %d named metrics (e.g. %s). Trait DR can run multi-trait PCA on these columns.",
+          nrow(gs),
+          length(tr %||% character(0)),
+          length(mc %||% character(0)),
+          paste(utils::head(mc %||% character(0), 3L), collapse = ", ")
+        )
+      )
+    })
+
     output$growth_summary_table <- DT::renderDataTable({
       if (!isTruthy(input$calculate_growth) || input$calculate_growth < 1L) {
         return(DT::datatable(
           data.frame(
-            Message = "Click Calculate Summaries to collapse plants (required before Trait DR / BLUP)."
+            Message = "Click Calculate Summaries to build trait__metric plant rows (required before Trait DR / BLUP)."
           ),
           rownames = FALSE,
           options = list(dom = "t")
@@ -257,18 +297,26 @@ growthSummariesServer <- function(id, filteredData, combined_inputs, projectData
         rownames = FALSE
       )
     })
-    
-    # AUC plot
+
+    .sf_gs_plot_df <- function(metric) {
+      data <- growth_summaries()
+      focus <- attr(data, "focus_trait")
+      if (is.null(focus) || !nzchar(as.character(focus)[[1L]])) {
+        focus <- combined_inputs$out_variables
+      }
+      ycol <- .sf_gs_metric_column(data, metric, focus_trait = focus)
+      list(data = data, ycol = ycol, focus = focus)
+    }
+
     output$auc_plot <- renderPlot({
       req(growth_summaries(), input$calc_auc)
-      
-      if (!"auc" %in% names(growth_summaries())) {
+      pack <- .sf_gs_plot_df("auc")
+      if (is.na(pack$ycol)) {
         plot.new()
-        text(0.5, 0.5, "Enable 'Area Under Curve' to see this plot", cex = 1.5)
+        text(0.5, 0.5, "No AUC column — enable AUC and recalculate", cex = 1.3)
         return()
       }
-
-      data <- growth_summaries()
+      data <- pack$data
       grp <- input$growth_grouping
       grp <- grp[!is.null(grp) & !is.na(grp) & nzchar(as.character(grp))]
       grp <- intersect(as.character(grp), names(data))
@@ -277,43 +325,38 @@ growthSummariesServer <- function(id, filteredData, combined_inputs, projectData
         text(0.5, 0.5, "Select at least one grouping factor present in the data", cex = 1.2)
         return()
       }
-
-      # Base plot on first grouping
-      p <- ggplot(data, aes(x = !!sym(grp[1]), y = auc)) +
+      ycol <- pack$ycol
+      p <- ggplot(data, aes(x = !!sym(grp[1]), y = !!sym(ycol))) +
         geom_boxplot(alpha = 0.7, outlier.shape = NA, fill = if (length(grp) >= 2) NA else "#4CAF50") +
         geom_jitter(width = 0.2, alpha = 0.6)
-
-      # If second grouping provided, color by it
       if (length(grp) >= 2) {
-        p <- ggplot(data, aes(x = !!sym(grp[1]), y = auc, color = !!sym(grp[2]))) +
+        p <- ggplot(data, aes(x = !!sym(grp[1]), y = !!sym(ycol), color = !!sym(grp[2]))) +
           geom_boxplot(alpha = 0.7, position = position_dodge(width = 0.75), outlier.shape = NA) +
           geom_jitter(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.75), alpha = 0.6)
       }
-
-      # If third grouping provided, facet by it
       if (length(grp) >= 3) {
         p <- p + facet_wrap(as.formula(paste("~", grp[3])))
       }
-
       p +
         getStatfarmerTheme() +
-        labs(title = "Area Under Curve by Group (selected times)",
-             x = grp[1],
-             y = "AUC") +
+        labs(
+          title = paste0("AUC by group — ", ycol),
+          subtitle = "Selected times only (trapezoidal, hours)",
+          x = grp[1],
+          y = ycol
+        ) +
         theme(text = element_text(size = 14))
     })
-    
-    # Growth rate plot
+
     output$rate_plot <- renderPlot({
       req(growth_summaries(), input$calc_rate)
-      
-      if (!"growth_rate" %in% names(growth_summaries())) {
+      pack <- .sf_gs_plot_df("growth_rate")
+      if (is.na(pack$ycol)) {
         plot.new()
-        text(0.5, 0.5, "Enable 'Growth rate (slope)' to see this plot", cex = 1.5)
+        text(0.5, 0.5, "No growth_rate column — enable growth rate and recalculate", cex = 1.3)
         return()
       }
-
-      data <- growth_summaries()
+      data <- pack$data
       grp <- input$growth_grouping
       grp <- grp[!is.null(grp) & !is.na(grp) & nzchar(as.character(grp))]
       grp <- intersect(as.character(grp), names(data))
@@ -322,40 +365,38 @@ growthSummariesServer <- function(id, filteredData, combined_inputs, projectData
         text(0.5, 0.5, "Select at least one grouping factor present in the data", cex = 1.2)
         return()
       }
-
-      p <- ggplot(data, aes(x = !!sym(grp[1]), y = growth_rate)) +
+      ycol <- pack$ycol
+      p <- ggplot(data, aes(x = !!sym(grp[1]), y = !!sym(ycol))) +
         geom_boxplot(alpha = 0.7, outlier.shape = NA, fill = if (length(grp) >= 2) NA else "#2196F3") +
         geom_jitter(width = 0.2, alpha = 0.6)
-
       if (length(grp) >= 2) {
-        p <- ggplot(data, aes(x = !!sym(grp[1]), y = growth_rate, color = !!sym(grp[2]))) +
+        p <- ggplot(data, aes(x = !!sym(grp[1]), y = !!sym(ycol), color = !!sym(grp[2]))) +
           geom_boxplot(alpha = 0.7, position = position_dodge(width = 0.75), outlier.shape = NA) +
           geom_jitter(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.75), alpha = 0.6)
       }
-
       if (length(grp) >= 3) {
         p <- p + facet_wrap(as.formula(paste("~", grp[3])))
       }
-
       p +
         getStatfarmerTheme() +
-        labs(title = "Growth Rate by Group (selected times)",
-             x = grp[1],
-             y = "Growth Rate (units/day)") +
+        labs(
+          title = paste0("Growth rate by group — ", ycol),
+          subtitle = "Selected times only (Δy / Δdays)",
+          x = grp[1],
+          y = ycol
+        ) +
         theme(text = element_text(size = 14))
     })
-    
-    # Download handler
+
     output$download_summaries <- downloadHandler(
       filename = function() {
-        paste0("growth_summaries_", Sys.Date(), ".csv")
+        paste0("growth_summaries_multitrait_", Sys.Date(), ".csv")
       },
       content = function(file) {
         write.csv(growth_summaries(), file, row.names = FALSE)
       }
     )
 
-    # Expose plant-level summaries for BLUP / DR (prefer return over session$userData)
     list(
       plant_summaries = growth_summaries,
       growth_summaries = growth_summaries

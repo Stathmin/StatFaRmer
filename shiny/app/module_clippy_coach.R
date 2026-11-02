@@ -76,10 +76,20 @@ clippyCoachServer <- function(id, plant_summaries, dr_result, blup_result) {
       collapsed(!isTRUE(collapsed()))
     })
 
+    # Never let a sidecar reactive crash the coach panel (validate/need errors,
+    # jsonlite::validate masking, missing Growth Summaries, etc.).
+    .sf_coach_safe <- function(expr) {
+      tryCatch(
+        expr,
+        error = function(e) NULL,
+        shiny.silent.error = function(e) NULL
+      )
+    }
+
     status <- reactive({
-      ps <- tryCatch(plant_summaries(), error = function(e) NULL)
-      dr <- tryCatch(dr_result(), error = function(e) NULL)
-      bl <- tryCatch(blup_result(), error = function(e) NULL)
+      ps <- .sf_coach_safe(plant_summaries())
+      dr <- if (is.null(dr_result)) NULL else .sf_coach_safe(dr_result())
+      bl <- if (is.null(blup_result)) NULL else .sf_coach_safe(blup_result())
       .sf_coach_status(ps, dr, bl, alpha = 0.05)
     })
 

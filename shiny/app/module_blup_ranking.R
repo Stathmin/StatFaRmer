@@ -214,7 +214,15 @@ blupRankingServer <- function(id, plant_summaries, combined_inputs,
         updateSelectInput(session, "blup_trait", choices = character(0))
         return()
       }
-      preferred <- intersect(c("mean", "auc", "peak", "growth_rate"), choices)
+      # Prefer named GS metrics (multi-trait panel), then legacy single-trait names, then PCs
+      preferred <- c(
+        grep("__auc$", choices, value = TRUE),
+        grep("__last$", choices, value = TRUE),
+        grep("__peak$", choices, value = TRUE),
+        intersect(c("auc", "last", "peak", "growth_rate", "mean"), choices),
+        grep("^PC[0-9]+$", choices, value = TRUE)
+      )
+      preferred <- unique(preferred)
       selected <- if (length(preferred) > 0L) preferred[[1L]] else choices[[1L]]
       updateSelectInput(session, "blup_trait",
                         choices = choices,
@@ -232,16 +240,17 @@ blupRankingServer <- function(id, plant_summaries, combined_inputs,
     # Heavy fit only on button (shiny-r-optimize); plants filtered by left sidebar
     blup_result <- eventReactive(input$calculate_blup, {
       ps <- plants_sidebar()
-      validate(
-        need(
+      # shiny:: — jsonlite::validate is attached via tidyverse and masks shiny::validate
+      shiny::validate(
+        shiny::need(
           !is.null(ps) && nrow(ps) > 0L,
           "No plants after left-sidebar filters. Widen cultivar/treatment selection or re-run Growth Summaries."
         ),
-        need(
-          isTruthy(input$blup_trait) && input$blup_trait %in% names(ps),
+        shiny::need(
+          shiny::isTruthy(input$blup_trait) && input$blup_trait %in% names(ps),
           "Select a plant-level trait column."
         ),
-        need(
+        shiny::need(
           "cultivar" %in% names(ps),
           "Plant summaries missing cultivar column."
         )
@@ -749,10 +758,10 @@ blupRankingServer <- function(id, plant_summaries, combined_inputs,
       fd <- tryCatch({
         if (is.null(filteredData)) NULL else filteredData()
       }, error = function(e) NULL)
-      validate(
-        need(!is.null(fd) && is.data.frame(fd) && nrow(fd) > 0L,
+      shiny::validate(
+        shiny::need(!is.null(fd) && is.data.frame(fd) && nrow(fd) > 0L,
              "No filtered observation data — pick a processed project and filters in the left bar."),
-        need(isTruthy(input$followup_trait) && input$followup_trait %in% names(fd),
+        shiny::need(shiny::isTruthy(input$followup_trait) && input$followup_trait %in% names(fd),
              "Select a follow-up trait present in the filtered data.")
       )
       fd2 <- .sf_filter_plants_by_sidebar(fd, combined_inputs)

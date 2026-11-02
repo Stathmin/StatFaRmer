@@ -1,0 +1,13 @@
+{
+  "name": "statfarmer-browser-smoke",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "smoke:gs-blup": "node smoke_gs_dr_blup.mjs",
+    "debug:sidebar": "node debug_shiny_sidebar.mjs"
+  },
+  "devDependencies": {
+    "puppeteer": "^25.16.0"
+  }
+}

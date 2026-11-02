@@ -21,7 +21,7 @@ traitReductionUI <- function(id) {
     fluidRow(
       column(12,
         h3("Trait Dimensionality Reduction"),
-        p("PCA on plant × selected traits (never genotype rows or design factors). PC scores attach to the same plant rows for BLUP."),
+        p("PCA on plant × named Growth Summaries metrics (trait__auc / __peak / …). PC scores attach to the same plant rows for BLUP."),
         uiOutput(ns("dr_guidance")),
         hr()
       )
@@ -31,7 +31,7 @@ traitReductionUI <- function(id) {
       column(4,
         wellPanel(
           h4("Settings"),
-          selectInput(ns("dr_traits"), "Traits (plant phenotypes):",
+          selectInput(ns("dr_traits"), "Traits (named GS metrics):",
                       choices = c(), multiple = TRUE),
           numericInput(ns("n_comp"), "Number of PCs (blank = all):",
                        value = NA, min = 1, max = 50, step = 1),
@@ -39,7 +39,7 @@ traitReductionUI <- function(id) {
           helpText(
             tags$small(
               tags$strong("Rows:"), " plants from Growth Summaries (one row per plant).", tags$br(),
-              tags$strong("Columns:"), " phenotypes only — cultivar/treatment stay out of PCA.", tags$br(),
+              tags$strong("Columns:"), " multi-trait panel metrics (e.g. digital_biomass_mm3__auc, ndvi_average__last) — not raw scans.", tags$br(),
               tags$strong("Next:"), " after Calculate PCA, pick PC1… as the trait on the BLUP tab."
             )
           ),
@@ -96,13 +96,12 @@ traitReductionUI <- function(id) {
             br(),
             h4("Trait DR sidecar"),
             tags$ul(
-              tags$li(strong("Rows:"), " plants only (Growth Summaries collapse)."),
-              tags$li(strong("Columns:"), " user-selected numeric phenotypes — not cultivar/treatment."),
+              tags$li(strong("Rows:"), " plants only (Growth Summaries multi-trait collapse)."),
+              tags$li(strong("Columns:"), " named temporal metrics trait__auc / __peak / __growth_rate / __last (and optional __mean)."),
               tags$li(strong("Plots:"), " createDrScreePlot, createDrScoresPlot, createDrLoadingsPlot via plotting.R."),
               tags$li(strong("Output:"), " PC1… on the same plant table for the BLUP trait chooser."),
               tags$li(strong("Refresh:"), " re-running Growth Summaries clears cached PCs — Calculate PCA again."),
-              tags$li(strong("Anti-goal:"), " never mass-BLUP-then-PCA; never genotype×trait mean matrix."),
-              tags$li(strong("Parked:"), " multi-PlantEye wide plant×traits frame (beyond GS curve metrics) is follow-up.")
+              tags$li(strong("Anti-goal:"), " never silent across-time raw means; never genotype×trait mean matrix.")
             )
           )
         )
@@ -207,12 +206,13 @@ traitReductionServer <- function(id, plant_summaries, combined_inputs) {
     # Heavy PCA only on button; plant rows filtered by left sidebar
     dr_result <- eventReactive(input$calculate_dr, {
       ps <- plants_sidebar()
-      validate(
-        need(
+      # shiny:: — jsonlite::validate is attached via tidyverse and masks shiny::validate
+      shiny::validate(
+        shiny::need(
           !is.null(ps) && nrow(ps) > 0L,
           "No plants after left-sidebar filters. Widen cultivar/treatment or re-run Growth Summaries."
         ),
-        need(
+        shiny::need(
           length(input$dr_traits) >= 2L,
           "Select at least 2 phenotype columns."
         )
@@ -233,7 +233,9 @@ traitReductionServer <- function(id, plant_summaries, combined_inputs) {
           plant_df = ps,
           trait_cols = input$dr_traits,
           n_comp = n_comp,
-          scale = isTRUE(input$scale_traits)
+          scale = isTRUE(input$scale_traits),
+          # GS multi-trait panel must be trait__auc / __peak / … (not raw scans)
+          require_named_temporal_metrics = TRUE
         )
         if (is.list(out) && is.list(out$meta)) {
           out$meta$sidebar <- sidebar_snap

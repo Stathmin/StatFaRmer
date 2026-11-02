@@ -28,6 +28,39 @@ test_that("collapse supports growth_rate and last", {
   expect_equal(out$growth_rate[out$unit == "P1"], 10)
 })
 
+test_that("GS phenotype candidates and metric column resolver", {
+  root <- here::here()
+  source(file.path(root, "shiny/common/txy_parse.R"), local = TRUE)
+  source(file.path(root, "shiny/common/plant_collapse.R"), local = TRUE)
+
+  raw <- data.frame(
+    unit = 1:2,
+    cultivar = c("A", "B"),
+    digital_biomass_mm3 = c(1, 2),
+    ndvi_average = c(0.4, 0.5),
+    dbscan_cluster = 1:2,
+    outlier = c(0, 0),
+    stringsAsFactors = FALSE
+  )
+  cands <- .sf_gs_phenotype_candidates(raw)
+  expect_true(all(c("digital_biomass_mm3", "ndvi_average") %in% cands))
+  expect_false("outlier" %in% cands)
+  expect_false("dbscan_cluster" %in% cands)
+  def <- .sf_gs_default_panel_traits(cands, focus_trait = "ndvi_average", max_n = 2L)
+  expect_equal(def[[1L]], "ndvi_average")
+
+  wide <- data.frame(
+    unit = 1,
+    digital_biomass_mm3__auc = 10,
+    ndvi_average__auc = 1,
+    stringsAsFactors = FALSE
+  )
+  expect_equal(
+    .sf_gs_metric_column(wide, "auc", "digital_biomass_mm3"),
+    "digital_biomass_mm3__auc"
+  )
+})
+
 test_that("collapseManyTraits yields trait__metric columns and assert passes", {
   root <- here::here()
   source(file.path(root, "shiny/common/txy_parse.R"), local = TRUE)
