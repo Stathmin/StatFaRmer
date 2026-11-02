@@ -1,0 +1,35 @@
+---
+description: Never average raw phenotypes across time for posthoc/violin/DR distributions
+alwaysApply: true
+---
+
+# StatFaRmer — no across-time raw means for posthoc or multi-trait DR
+
+StatFaRmer always observes **the same biological units over time**. Timepoints are developmental states, not i.i.d. replicates.
+
+## Forbidden
+
+- Averaging a **raw** phenotype (e.g. `digital_biomass_mm3`, NDVI) across multiple `dbscan_cluster` / dates and then using that mean for:
+  - violins / boxplots sold as “the distribution”
+  - ANOVA / Tukey / Dunnett / CLD letters
+  - any “one row per plant” posthoc that pretends stages are interchangeable
+  - **multi-trait PCA / Trait DR phenotype matrices** (silent plant means of 40 raw traits)
+- Reintroducing helpers like “plant mean over all selected times” for distributional analysis or unlabeled DR input
+- Calling `.sf_plant_trait_means()` — it **must** keep aborting (`.sf_forbid_across_time_raw_mean_posthoc`)
+
+## Required instead
+
+- **Growth curves**: plot the full temporal trajectory (raw + median by genotype)
+- **Violins / Tukey / letters**: **one time slice only** (`.sf_slice_single_time` / `.sf_plants_at_time` / `computeTraitTukeyLetters(..., time_value=)`)
+- **Explicit temporal summaries** via Growth Summaries / `collapsePlantsBySelectedTimes` / `collapseManyTraitsBySelectedTimes` named metrics:
+  - `auc`, `peak`, `growth_rate`, `last` (preferred for DR)
+  - `mean` only when explicitly named as a GS metric — never a silent default for multi-trait DR
+- Multi-trait DR columns must look like `trait__auc` / `trait__peak` / … — enforce with `.sf_dr_assert_named_temporal_metrics` / `reduceTraitsPCA(..., require_named_temporal_metrics = TRUE)`
+
+## When editing follow-up / BLUP / DR plots
+
+1. Keep curve plots multi-time.
+2. Keep violin+Tukey single-time; UI must expose the time slice.
+3. If a task asks to “collapse plants” for letters on a raw trait without a time slice → refuse and use single-time or GS metrics.
+4. If a task asks for multi-trait PCA on plant means of raw scans → refuse; use named metrics or FPCA later.
+5. Add/extend tests that `.sf_plant_trait_means` stops, single-time Tukey works, and unlabeled DR trait cols fail the assert.

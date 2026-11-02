@@ -4,6 +4,52 @@ library(tidyverse)
 library(broom)
 library(lme4)
 
+#' Gate ANOVA before fitting: unfit designs must not run aov/lmer.
+#' @param data Filtered data.frame
+#' @param factors Character vector of requested ANOVA factors
+#' @param response Response column name
+#' @return list(ok, reason, factors, cardinality)
+assessAnovaFitness <- function(data, factors, response) {
+  if (is.null(data) || !is.data.frame(data) || nrow(data) < 2L) {
+    return(list(ok = FALSE, reason = "Need at least 2 rows in filtered data.", factors = character(0), cardinality = integer(0)))
+  }
+  if (is.null(response) || !nzchar(response) || !response %in% names(data)) {
+    return(list(ok = FALSE, reason = "Response trait missing from filtered data.", factors = character(0), cardinality = integer(0)))
+  }
+  y <- suppressWarnings(as.numeric(data[[response]]))
+  if (sum(is.finite(y)) < 2L) {
+    return(list(ok = FALSE, reason = "Response has fewer than 2 finite values.", factors = character(0), cardinality = integer(0)))
+  }
+  factors <- as.character(factors)
+  factors <- factors[!is.na(factors) & nzchar(factors)]
+  factors <- factors[factors %in% names(data)]
+  if (length(factors) < 1L) {
+    return(list(
+      ok = FALSE,
+      reason = "No ANOVA factors selected (or none exist in this project data). Intercept-only ANOVA is not run.",
+      factors = character(0),
+      cardinality = integer(0)
+    ))
+  }
+  cardinality <- vapply(factors, function(f) {
+    length(unique(stats::na.omit(data[[f]])))
+  }, integer(1))
+  usable <- factors[cardinality >= 2L]
+  if (length(usable) < 1L) {
+    detail <- paste(paste0(names(cardinality), "=", cardinality), collapse = ", ")
+    return(list(
+      ok = FALSE,
+      reason = paste0(
+        "ANOVA not run: every selected factor has <2 levels in the filtered data (",
+        detail, "). Change filters/factors, or use BLUP / Growth Summaries."
+      ),
+      factors = character(0),
+      cardinality = cardinality
+    ))
+  }
+  list(ok = TRUE, reason = NULL, factors = usable, cardinality = cardinality)
+}
+
 #' Analyze cardinality of factors in data
 #' @param data Filtered data
 #' @param factors Character vector of factor names to check

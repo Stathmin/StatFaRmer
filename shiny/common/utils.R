@@ -35,18 +35,83 @@ getAvailableProjects <- function() {
   return(all_projects)
 }
 
+#' Whether Main App can load processed RDS for a project
+#' @param project_name character scalar
+#' @return logical
+isProjectProcessed <- function(project_name) {
+  if (is.null(project_name) || length(project_name) != 1 || is.na(project_name) || !nzchar(project_name)) {
+    return(FALSE)
+  }
+  merged_table_path <- here('data', project_name, paste0(project_name, '_merged_table.rds'))
+  vector_of_groups_path <- here('data', project_name, paste0(project_name, '_vector_of_groups.rds'))
+  file.exists(merged_table_path) && file.exists(vector_of_groups_path)
+}
+
+#' Filter to projects that Main App can load
+#' @param available_projects character vector of project names
+#' @return Subset that have processed RDS files
+getProcessedProjects <- function(available_projects) {
+  if (length(available_projects) == 0) return(character(0))
+  available_projects[vapply(available_projects, isProjectProcessed, logical(1))]
+}
+
+#' Labeled choices for project selectInput (marks unprocessed)
+#' @param available_projects character vector of project names
+#' @return Named character vector: names = labels, values = project ids
+projectSelectChoices <- function(available_projects) {
+  if (length(available_projects) == 0) return(character(0))
+  labels <- vapply(available_projects, function(p) {
+    if (isProjectProcessed(p)) {
+      p
+    } else {
+      paste0(p, ' (not processed — run Master Wizard)')
+    }
+  }, character(1), USE.NAMES = FALSE)
+  stats::setNames(available_projects, labels)
+}
+
+#' Empty project payload for soft-fail UI boot
+#' @return list(merged_table, vector_of_groups)
+emptyProjectData <- function() {
+  list(merged_table = data.frame(), vector_of_groups = character(0))
+}
+
+#' Empty UI selections matching prepareUISelections() shape
+#' @return List matching prepareUISelections() shape
+emptyUISelections <- function() {
+  list(
+    anova_factors = character(0),
+    treatments = character(0),
+    cultivars = character(0),
+    timestamp_groups = character(0),
+    named_timestamp_groups = character(0),
+    out_variables = character(0)
+  )
+}
+
 #' Select default project honoring environment override
+#' Prefers a processed project when SELECTED_PROJECT is unready.
 #' @param available_projects character vector of project names
 #' @return Single project name
 getDefaultProject <- function(available_projects) {
   if (length(available_projects) == 0) return(NA_character_)
+  processed <- getProcessedProjects(available_projects)
   selected <- Sys.getenv('SELECTED_PROJECT', '')
   if (nzchar(selected) && selected %in% available_projects) {
-    return(selected)
+    if (isProjectProcessed(selected) || length(processed) == 0) {
+      return(selected)
+    }
+    message(
+      'SELECTED_PROJECT "', selected,
+      '" is not processed (missing RDS). Defaulting to processed project "',
+      processed[1], '". Run Master Wizard on the unready project first.'
+    )
+    return(processed[1])
   }
-  if ("project_NO3" %in% available_projects) {
+  if ("project_NO3" %in% processed) {
     return("project_NO3")
   }
+  if (length(processed) > 0) return(processed[1])
   return(available_projects[1])
 }
 
@@ -315,6 +380,9 @@ generateLabelDf <- function(TUKEY, variable) {
 #' @param merged_table Main data table
 #' @return List with UI data selections
 prepareUISelections <- function(merged_table) {
+  if (is.null(merged_table) || !is.data.frame(merged_table) || ncol(merged_table) == 0) {
+    return(emptyUISelections())
+  }
   # ANOVA factors - get character columns (excluding timestamp); drop 'unit'
   char_cols <- names(merged_table)[sapply(merged_table, function(x) is.character(x) || is.factor(x))]
   anova_factors <- sort(setdiff(char_cols, 'unit'))

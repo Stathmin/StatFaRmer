@@ -187,7 +187,14 @@
   emm <- tryCatch(
     {
       if (inherits(fit_fe, "lmerMod")) {
-        emmeans::emmeans(fit_fe, specs = ".g", lmer.df = "satterthwaite")
+        # Prefer Satterthwaite when lmerTest is present; else asymptotic
+        # (avoids tiny residual dfs that make FDR contrasts unusable).
+        df_mode <- if (requireNamespace("lmerTest", quietly = TRUE)) {
+          "satterthwaite"
+        } else {
+          "asymptotic"
+        }
+        emmeans::emmeans(fit_fe, specs = ".g", lmer.df = df_mode)
       } else {
         emmeans::emmeans(fit_fe, specs = ".g")
       }
@@ -447,8 +454,13 @@ fitBlupModels <- function(data,
       "Treatment panel empty: fewer than 2 levels in `", treatment_var, "`."
     )
   } else if (requireNamespace("emmeans", quietly = TRUE)) {
+    df_mode_trt <- if (requireNamespace("lmerTest", quietly = TRUE)) {
+      "satterthwaite"
+    } else {
+      "asymptotic"
+    }
     emm_t <- tryCatch(
-      emmeans::emmeans(fit, specs = ".trt", lmer.df = "satterthwaite"),
+      emmeans::emmeans(fit, specs = ".trt", lmer.df = df_mode_trt),
       error = function(e) e
     )
     if (!inherits(emm_t, "error")) {

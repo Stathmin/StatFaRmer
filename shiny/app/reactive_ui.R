@@ -56,9 +56,14 @@ createReactiveUI <- function(input, output, session, combined_inputs, projectUIS
                        choices = grouping_choices,
                        selected = default_grouping)
       
-      # Single-treatment experiments: default facet without useless treatment strip (#8)
-      if (n_treat <= 1L) {
-        updateTextInput(session, 'facet_formula', value = '~ dbscan_cluster')
+      # No / single treatment: do not facet on missing `treatment` (#8, soy-325)
+      if (n_treat <= 1L || !('treatment' %in% selections$anova_factors)) {
+        facet_default <- if ('dbscan_cluster' %in% selections$anova_factors) {
+          '~ dbscan_cluster'
+        } else {
+          '~ .'
+        }
+        updateTextInput(session, 'facet_formula', value = facet_default)
       } else {
         updateTextInput(session, 'facet_formula', value = 'treatment ~ dbscan_cluster')
       }

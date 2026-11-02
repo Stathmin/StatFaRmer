@@ -24,11 +24,7 @@ createReactiveData <- function(input, session, combined_inputs) {
           type = "error",
           duration = 10
         )
-        # Return empty data structure
-        list(
-          merged_table = data.frame(),
-          vector_of_groups = character(0)
-        )
+        emptyProjectData()
       })
     })
   })
@@ -39,14 +35,7 @@ createReactiveData <- function(input, session, combined_inputs) {
     if (nrow(data$merged_table) > 0) {
       prepareUISelections(data$merged_table)
     } else {
-      list(
-        anova_factors = character(0),
-        treatments = character(0),
-        cultivars = character(0),
-        timestamp_groups = character(0),
-        named_timestamp_groups = character(0),
-        out_variables = character(0)
-      )
+      emptyUISelections()
     }
   })
   

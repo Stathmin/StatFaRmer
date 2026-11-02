@@ -39,9 +39,15 @@ data/*
 tmp/
 
 
-## Local experiment dirt (keep tracked history; hide new untracked)
+## Local experiment dirt — NEVER push project data or analysis outputs
 data/*
 !data/project_*/
 data/project_*/**
+outputs/
 **/skills-inventory*.tsv
 
+
+## Node (puppeteer debug tooling)
+scripts/browser/node_modules/
+
+.positai

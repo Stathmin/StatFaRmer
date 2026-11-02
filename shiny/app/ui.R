@@ -29,6 +29,10 @@ source(here('shiny', 'common', 'blup_ranking.R'))
 source(here('shiny', 'app', 'module_blup_ranking.R'))
 source(here('shiny', 'common', 'trait_reduction.R'))
 source(here('shiny', 'app', 'module_trait_reduction.R'))
+source(here('shiny', 'common', 'pipeline_coach.R'))
+source(here('shiny', 'common', 'biology_readout.R'))
+source(here('shiny', 'common', 'trait_followup.R'))
+source(here('shiny', 'app', 'module_clippy_coach.R'))
 
 
 # Get available projects
@@ -116,6 +120,9 @@ ui <- fluidPage(
   
   # Application title
   titlePanel("StatFaRmer"),
+
+  # FarmaClip coach (floating; guides GS → Trait DR → BLUP on PCs)
+  clippyCoachUI("farma_clip"),
 
   # Empty / unprocessed project guidance (startup soft-fail)
   if (!isTRUE(project_data_ready)) {

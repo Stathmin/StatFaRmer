@@ -59,6 +59,12 @@ source(here('shiny', 'app', 'module_growth_summaries.R'))
 source(here('shiny', 'common', 'spatial_residualize.R'))
 source(here('shiny', 'common', 'blup_ranking.R'))
 source(here('shiny', 'app', 'module_blup_ranking.R'))
+source(here('shiny', 'common', 'trait_reduction.R'))
+source(here('shiny', 'app', 'module_trait_reduction.R'))
+source(here('shiny', 'common', 'pipeline_coach.R'))
+source(here('shiny', 'common', 'biology_readout.R'))
+source(here('shiny', 'common', 'trait_followup.R'))
+source(here('shiny', 'app', 'module_clippy_coach.R'))
 
 # Get available projects
 available_projects <- getAvailableProjects()
@@ -70,12 +76,16 @@ default_project <- if (!is.null(getOption('statfarmer.project'))) {
   getDefaultProject(available_projects)
 }
 
-# Load default project data
+# Soft-fail load (do not fall through to loadShinyData crash path)
 data_list <- tryCatch({
-  loadProjectData(default_project)
+  if (is.na(default_project) || !nzchar(as.character(default_project))) {
+    emptyProjectData()
+  } else {
+    loadProjectData(default_project)
+  }
 }, error = function(e) {
-  # Fallback to old method if project-specific files don't exist
-  loadShinyData()
+  message('Server default project load soft-fail: ', conditionMessage(e))
+  emptyProjectData()
 })
 
 merged_table <- data_list$merged_table
@@ -173,9 +183,19 @@ server <- function(input, output, session) {
   })
 
   # BLUP Module (plant-collapsed traits / optional PC hyper-traits)
-  blupRankingServer(
+  blup_mod <- blupRankingServer(
     "blup_ranking",
     plant_for_blup,
-    combined_inputs
+    combined_inputs,
+    filteredData = filteredData,
+    dr_result = trait_dr_mod$dr_result
+  )
+
+  # FarmaClip: guide GS → Trait DR → BLUP(PC) and surface significant / top genotypes
+  clippyCoachServer(
+    "farma_clip",
+    plant_summaries = growth_summaries_mod$plant_summaries,
+    dr_result = trait_dr_mod$dr_result,
+    blup_result = blup_mod$blup_result
   )
 }

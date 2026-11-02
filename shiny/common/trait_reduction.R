@@ -1,5 +1,9 @@
 # Plant × traits PCA (Trait DR). Rows = plants; columns = phenotypes only.
-# Parked: multi-PlantEye wide plant×traits frame (beyond GS curve metrics) is follow-up.
+#
+# Temporal HTP: phenotype columns for multi-trait DR must be *named growth
+# metrics* (trait__auc / __peak / __growth_rate / __last, or single-trait GS
+# columns mean/auc/peak), never silent across-time means of raw scans.
+# Use collapseManyTraitsBySelectedTimes() + .sf_dr_assert_named_temporal_metrics().
 
 .sf_dr_design_cols <- c(
   "unit", "V.T.R", "cultivar", "treatment", "repeat",
@@ -167,9 +171,12 @@
 #' @param trait_cols Phenotype columns; default = all eligible numeric
 #' @param n_comp Number of components to keep; NULL = all available
 #' @param scale Scale variables before PCA (prcomp scale.)
+#' @param require_named_temporal_metrics If TRUE, refuse unlabeled raw phenotype
+#'   names (forces GS / trait__metric columns for temporal data).
 #' @return list(plant_df_with_pcs, loadings, variance, cluster, meta)
 reduceTraitsPCA <- function(plant_df, trait_cols = NULL, n_comp = NULL,
-                            scale = TRUE) {
+                            scale = TRUE,
+                            require_named_temporal_metrics = FALSE) {
   if (is.null(plant_df) || !is.data.frame(plant_df) || nrow(plant_df) < 1L) {
     return(.sf_dr_fail("plant_df must be a non-empty data frame"))
   }
@@ -196,6 +203,26 @@ reduceTraitsPCA <- function(plant_df, trait_cols = NULL, n_comp = NULL,
         eligible
       ))
     ))
+  }
+
+  if (isTRUE(require_named_temporal_metrics)) {
+    ok_nm <- if (exists(".sf_is_named_temporal_metric_col", mode = "function")) {
+      vapply(trait_cols, .sf_is_named_temporal_metric_col, logical(1))
+    } else {
+      grepl("__(auc|peak|growth_rate|last|mean)$", trait_cols) |
+        trait_cols %in% c("mean", "auc", "peak", "growth_rate", "last")
+    }
+    bad <- trait_cols[!ok_nm]
+    if (length(bad) > 0L) {
+      return(.sf_dr_fail(
+        paste0(
+          "Named temporal metrics required (trait__auc/peak/growth_rate/last); ",
+          "unlabeled raw phenotypes forbidden as silent across-time means: ",
+          paste(utils::head(bad, 8L), collapse = ", ")
+        ),
+        plant_df = plant_df
+      ))
+    }
   }
 
   # Drop zero-variance traits (after complete-case subset)

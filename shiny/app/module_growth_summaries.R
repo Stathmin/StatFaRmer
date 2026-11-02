@@ -131,12 +131,15 @@ growthSummariesServer <- function(id, filteredData, combined_inputs, projectData
       combined_inputs$out_variables
     })
     
-    # Update choices
+    # Update choices — never preselect columns absent from this project (soy-325: no treatment)
     observe({
       req(combined_inputs$anova_factors)
+      choices <- setdiff(combined_inputs$anova_factors, "dbscan_cluster")
+      preferred <- intersect(c("treatment", "cultivar", "genotype"), choices)
+      selected <- if (length(preferred) > 0L) preferred else head(choices, 1L)
       updateSelectInput(session, "growth_grouping",
-                       choices = setdiff(combined_inputs$anova_factors, "dbscan_cluster"),
-                       selected = c("treatment", "cultivar"))
+                       choices = choices,
+                       selected = selected)
     })
     
     # Calculate growth summaries over selected times only (curve bridge)
@@ -265,8 +268,15 @@ growthSummariesServer <- function(id, filteredData, combined_inputs, projectData
         return()
       }
 
-      grp <- input$growth_grouping
       data <- growth_summaries()
+      grp <- input$growth_grouping
+      grp <- grp[!is.null(grp) & !is.na(grp) & nzchar(as.character(grp))]
+      grp <- intersect(as.character(grp), names(data))
+      if (length(grp) < 1L) {
+        plot.new()
+        text(0.5, 0.5, "Select at least one grouping factor present in the data", cex = 1.2)
+        return()
+      }
 
       # Base plot on first grouping
       p <- ggplot(data, aes(x = !!sym(grp[1]), y = auc)) +
@@ -303,8 +313,15 @@ growthSummariesServer <- function(id, filteredData, combined_inputs, projectData
         return()
       }
 
-      grp <- input$growth_grouping
       data <- growth_summaries()
+      grp <- input$growth_grouping
+      grp <- grp[!is.null(grp) & !is.na(grp) & nzchar(as.character(grp))]
+      grp <- intersect(as.character(grp), names(data))
+      if (length(grp) < 1L) {
+        plot.new()
+        text(0.5, 0.5, "Select at least one grouping factor present in the data", cex = 1.2)
+        return()
+      }
 
       p <- ggplot(data, aes(x = !!sym(grp[1]), y = growth_rate)) +
         geom_boxplot(alpha = 0.7, outlier.shape = NA, fill = if (length(grp) >= 2) NA else "#2196F3") +

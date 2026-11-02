@@ -1,0 +1,30 @@
+---
+description: Never commit or push StatFaRmer experiment / project data
+alwaysApply: true
+---
+
+# StatFaRmer — NEVER push experiment data
+
+**Program code only** goes to git. Experiment inputs/outputs stay local.
+
+## Do NOT commit or push
+
+- `data/project_*/**` (handmade, PlantEye CSVs, merges, RDS, cultivar lists, zips, groups.xlsx, …)
+- `outputs/**` with analysis artifacts (plots, BLUP RDS, biology readouts, letters CSVs, …)
+- Any path that identifies a real experiment, genotype panel, or unpublished results
+
+## DO commit
+
+- `shiny/`, `scripts/` that *generate* analyses (not their outputs)
+- `tests/`, docs, `CHANGELOG.md`, app config templates
+- Tiny synthetic fixtures under `tests/testthat/fixtures/` only
+
+## If asked to “push the work”
+
+1. Stage **code + tests + changelog** only.
+2. Confirm `git status` / `git diff --cached` has **no** `data/project_*` and **no** experiment `outputs/`.
+3. If experiment files were already committed: remove them from the index, fix `.gitignore`, rewrite the feature branch (`reset` + commit, then `--force-with-lease` on that feature branch only — never on `main`/`master`) so history does not keep the leak.
+
+## Reminder
+
+Publishing genotype names, seed sources, or phenotype tables without explicit user approval for *those files* is a data leak. When unsure: **ask**, or leave data out.

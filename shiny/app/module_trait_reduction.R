@@ -119,9 +119,15 @@ traitReductionUI <- function(id) {
 traitReductionServer <- function(id, plant_summaries, combined_inputs) {
   moduleServer(id, function(input, output, session) {
 
-    output$dr_guidance <- renderUI({
+    # Respect left-sidebar cultivar/treatment filters (same bus as main plot)
+    plants_sidebar <- reactive({
       ps <- .sf_dr_read_plants(plant_summaries)
-      if (is.null(ps)) {
+      .sf_filter_plants_by_sidebar(ps, combined_inputs)
+    })
+
+    output$dr_guidance <- renderUI({
+      ps_raw <- .sf_dr_read_plants(plant_summaries)
+      if (is.null(ps_raw)) {
         tags$div(
           class = "alert alert-warning",
           role = "alert",
@@ -129,15 +135,17 @@ traitReductionServer <- function(id, plant_summaries, combined_inputs) {
           "Open Growth Summaries and click Calculate Summaries so Trait DR has one row per plant."
         )
       } else {
-        eligible <- .sf_dr_eligible_traits(ps)
+        ps <- plants_sidebar()
+        n_after <- if (is.null(ps)) 0L else nrow(ps)
+        eligible <- .sf_dr_eligible_traits(if (!is.null(ps) && nrow(ps) > 0L) ps else ps_raw)
         if (length(eligible) < 2L) {
           tags$div(
             class = "alert alert-warning",
             role = "alert",
             strong("Need ≥2 numeric phenotypes. "),
             sprintf(
-              "%d plant row(s) ready, but only %d eligible trait column(s). Enable more Growth Summaries metrics (mean/AUC/peak/rate) or provide a wider plant-level table.",
-              nrow(ps), length(eligible)
+              "%d plant row(s) after sidebar (%d before), but only %d eligible trait column(s).",
+              n_after, nrow(ps_raw), length(eligible)
             )
           )
         } else {
@@ -145,8 +153,8 @@ traitReductionServer <- function(id, plant_summaries, combined_inputs) {
             class = "alert alert-info",
             role = "alert",
             sprintf(
-              "%d plant rows, %d eligible traits ready for plant×trait PCA.",
-              nrow(ps), length(eligible)
+              "%d plant rows after sidebar filters (%d before), %d eligible traits for PCA.",
+              n_after, nrow(ps_raw), length(eligible)
             )
           )
         }
@@ -154,7 +162,10 @@ traitReductionServer <- function(id, plant_summaries, combined_inputs) {
     })
 
     observe({
-      ps <- .sf_dr_read_plants(plant_summaries)
+      ps <- plants_sidebar()
+      if (is.null(ps) || nrow(ps) < 1L) {
+        ps <- .sf_dr_read_plants(plant_summaries)
+      }
       choices <- .sf_dr_eligible_traits(ps)
       if (length(choices) < 1L) {
         updateSelectInput(session, "dr_traits", choices = character(0))
@@ -193,13 +204,13 @@ traitReductionServer <- function(id, plant_summaries, combined_inputs) {
       )
     }
 
-    # Heavy PCA only on button (shiny-r-optimize)
+    # Heavy PCA only on button; plant rows filtered by left sidebar
     dr_result <- eventReactive(input$calculate_dr, {
-      ps <- .sf_dr_read_plants(plant_summaries)
+      ps <- plants_sidebar()
       validate(
         need(
-          !is.null(ps),
-          "Run Growth Summaries first (Calculate Summaries) before Trait DR."
+          !is.null(ps) && nrow(ps) > 0L,
+          "No plants after left-sidebar filters. Widen cultivar/treatment or re-run Growth Summaries."
         ),
         need(
           length(input$dr_traits) >= 2L,
@@ -214,14 +225,19 @@ traitReductionServer <- function(id, plant_summaries, combined_inputs) {
         n_comp <- as.integer(n_comp)
       }
 
+      sidebar_snap <- .sf_sidebar_plant_snapshot(combined_inputs)
+
       withProgress(message = "Running plant × trait PCA…", value = 0.2, {
-        incProgress(0.3, detail = paste(length(input$dr_traits), "traits"))
+        incProgress(0.3, detail = paste(length(input$dr_traits), "traits | n=", nrow(ps)))
         out <- reduceTraitsPCA(
           plant_df = ps,
           trait_cols = input$dr_traits,
           n_comp = n_comp,
           scale = isTRUE(input$scale_traits)
         )
+        if (is.list(out) && is.list(out$meta)) {
+          out$meta$sidebar <- sidebar_snap
+        }
         # Keep failure results so panels show soft-fail reason (not idle copy)
         dr_cache(out)
         incProgress(0.5, detail = "Done")

@@ -14,15 +14,27 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
   # Display formula and model info
   output$formula <- renderUI({
     req(combined_inputs$out_variables)
-    req(combined_inputs$anova_factors)
     req(filteredData())
-    
+
+    fitness_preview <- assessAnovaFitness(
+      filteredData(),
+      combined_inputs$anova_factors,
+      combined_inputs$out_variables
+    )
+    if (!isTRUE(fitness_preview$ok)) {
+      return(tags$div(
+        style = "color: #a94442; margin: 8px 0;",
+        tags$strong("ANOVA will not run: "),
+        fitness_preview$reason
+      ))
+    }
+
     # Debug logging
     cat("DEBUG: out_variables =", combined_inputs$out_variables, "\n")
-    cat("DEBUG: anova_factors =", paste(combined_inputs$anova_factors, collapse = ", "), "\n")
+    cat("DEBUG: anova_factors =", paste(fitness_preview$factors, collapse = ", "), "\n")
     
-    # Analyze cardinality to preview model choice
-    user_formula <- formulate(combined_inputs$out_variables, combined_inputs$anova_factors)
+    # Analyze cardinality to preview model choice (usable multi-level factors only)
+    user_formula <- formulate(combined_inputs$out_variables, fitness_preview$factors)
     formula_obj <- as.formula(user_formula)
     all_factors <- all.vars(formula_obj)[-1]
     
@@ -177,13 +189,37 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
     req(filteredData())
     
     data_to_plot <- withBenchmark('Shiny:PrepPlotData', filteredData())
+
+    # Explicitly depend on analysisResults so Submit refreshes graphics (letters / status)
+    ar <- tryCatch(analysisResults(), error = function(e) NULL)
+    analysis_fresh <- FALSE
+    if (!is.null(ar) && !is.null(ar$snapshot)) {
+      analysis_fresh <- identical(ar$snapshot$n_rows, nrow(data_to_plot)) &&
+        identical(ar$snapshot$out_var, combined_inputs$out_variables) &&
+        identical(ar$snapshot$anova_fac, as.character(combined_inputs$anova_factors))
+    }
+    plot_status <- NULL
+    if (!is.null(ar)) {
+      if (!analysis_fresh) {
+        plot_status <- "Filters/model changed since last Run analysis — re-run for letters/tables"
+      } else if (isTRUE(ar$anova$skipped) || !isTRUE(ar$anova$success)) {
+        plot_status <- if (!is.null(ar$anova$error) && nzchar(ar$anova$error)) {
+          ar$anova$error
+        } else if (!is.null(ar$status)) {
+          ar$status
+        } else {
+          "Analysis skipped or failed"
+        }
+      } else if (!is.null(ar$tukey_skip_reason)) {
+        plot_status <- ar$tukey_skip_reason
+      }
+    }
     
-    # Add group letters when Tukey succeeded (for color and/or text labels — #12)
-    want_letters <- !is.null(analysisResults()) && !is.null(analysisResults()$tukey) &&
-      isTRUE(analysisResults()$tukey$success)
+    # Add group letters when Tukey succeeded AND still matches current data/filters
+    want_letters <- analysis_fresh && !is.null(ar) && !is.null(ar$tukey) && isTRUE(ar$tukey$success)
     if (want_letters) {
       
-      tukey_results <- analysisResults()$tukey$results
+      tukey_results <- ar$tukey$results
       data_to_plot$group_letter <- NA_character_
       
       cat("DEBUG: Adding group letters. Tukey factors:", paste(names(tukey_results), collapse=", "), "\n")
@@ -225,38 +261,28 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
           by_names <- setdiff(by_names, c('group', factor_name))
           jl <- joinLettersToData(data_to_plot, letters_df, factor_name, byNames = by_names)
           data_to_plot <- jl$df
-          # Track created temp column
-          created_temp_cols <- c(created_temp_cols, paste0('_', factor_name, '_letter'))
+          # Track created temp column (factor names may contain underscores)
+          created_temp_cols <- c(created_temp_cols, temp_col)
           
           cat("DEBUG: After join, temp_col", temp_col, "has", sum(!is.na(data_to_plot[[temp_col]])), "non-NA values\n")
         }
       }
       
-      # Combine all letters into group_letter honoring selected factor order
-      cat("DEBUG: names(data_to_plot) after joins =", paste(names(data_to_plot), collapse=", "), "\n")
-      temp_cols_in_df <- names(data_to_plot)[grepl("^_[^_]+_letter$", names(data_to_plot))]
-      expected_temp_cols <- paste0("_", ordered_factors, "_letter")
-      # Prefer the actually created temp columns but order by expected factors
+      # Prefer tracked temp cols; never use [^_]+ regex (breaks _dbscan_cluster_letter)
       created_temp_cols <- unique(created_temp_cols)
-      letter_cols <- intersect(expected_temp_cols, intersect(temp_cols_in_df, created_temp_cols))
-      if (length(letter_cols) == 0L && length(temp_cols_in_df) > 0L) {
-        # Fallback to any detected temp cols (ordered by expected list)
-        letter_cols <- intersect(expected_temp_cols, temp_cols_in_df)
+      letter_cols <- created_temp_cols[created_temp_cols %in% names(data_to_plot)]
+      if (length(letter_cols) == 0L) {
+        letter_cols <- names(data_to_plot)[endsWith(names(data_to_plot), "_letter") &
+          startsWith(names(data_to_plot), "_")]
       }
       
-      cat("DEBUG: temp_cols_in_df =", paste(temp_cols_in_df, collapse=", "), "\n")
-      cat("DEBUG: expected_temp_cols =", paste(expected_temp_cols, collapse=", "), "\n")
-      cat("DEBUG: letter_cols =", paste(letter_cols, collapse=", "), "\n")
+      cat("DEBUG: created_temp_cols =", paste(created_temp_cols, collapse = ", "), "\n")
+      cat("DEBUG: letter_cols =", paste(letter_cols, collapse = ", "), "\n")
       
       if (length(letter_cols) > 0) {
         if (length(letter_cols) == 1) {
-          # Single factor: just copy the letter column
-          cat("DEBUG: Single factor case, copying", letter_cols[1], "\n")
-          data_to_plot$group_letter <- data_to_plot[[letter_cols[1]]]
-          cat("DEBUG: After copy, group_letter sample =", paste(head(data_to_plot$group_letter, 3), collapse=", "), "\n")
+          data_to_plot$group_letter <- as.character(data_to_plot[[letter_cols[1]]])
         } else {
-          # Multiple factors: concatenate letters
-          cat("DEBUG: Multiple factors case, concatenating", paste(letter_cols, collapse=", "), "\n")
           data_to_plot$group_letter <- apply(data_to_plot[letter_cols], 1, function(row) {
             non_na_letters <- row[!is.na(row)]
             if (length(non_na_letters) > 0) {
@@ -266,8 +292,6 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
             }
           })
         }
-        
-        # Clean up temporary columns without relying on dplyr select semantics
         for (col in letter_cols) {
           if (col %in% names(data_to_plot)) data_to_plot[[col]] <- NULL
         }
@@ -292,9 +316,24 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
     use_color <- !is.null(input$color_by) && input$color_by != 'none' && input$color_by %in% names(data_to_plot)
     color_var <- if (use_color) input$color_by else NULL
     
-    # Faceting
+    # Faceting — drop vars absent from data (soy-325 has no treatment)
     facet_ok <- !is.null(input$facet_formula) && nzchar(input$facet_formula) && input$facet_formula != '~ .'
     facet_fml <- if (facet_ok) tryCatch(as.formula(input$facet_formula), error = function(e) NULL) else NULL
+    if (!is.null(facet_fml)) {
+      fvars <- setdiff(all.vars(facet_fml), ".")
+      missing_f <- setdiff(fvars, names(data_to_plot))
+      if (length(missing_f) > 0L) {
+        present_f <- intersect(fvars, names(data_to_plot))
+        if (length(present_f) == 0L) {
+          facet_ok <- FALSE
+          facet_fml <- NULL
+        } else {
+          facet_fml <- stats::as.formula(paste("~", paste(present_f, collapse = " + ")))
+        }
+      }
+    } else {
+      facet_ok <- FALSE
+    }
     facet_ncol <- if (!is.null(input$facet_ncol)) as.integer(input$facet_ncol) else 2L
 
     grouping <- combined_inputs$factor_grouping
@@ -326,6 +365,7 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
         getStatfarmerTheme() +
         labs(
           title = paste("Timeseries of", y_var),
+          subtitle = plot_status,
           x = if (time_var == "timestamp_group") "Date/Time" else if (time_var == "time_numeric") "Time (days)" else "Time Cluster",
           y = y_var
         )
@@ -336,7 +376,7 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
       }
       
       if (use_color) p <- p + viridis::scale_color_viridis(discrete = TRUE, end = 0.9)
-      if (facet_ok) p <- applyStatfarmerFacet(p, facet_fml, ncol = facet_ncol)
+      if (facet_ok) p <- applyStatfarmerFacet(p, facet_fml, ncol = facet_ncol, data = data_to_plot)
     } else {
       # Boxplot — grouping "none" → single x category (#10)
       if (use_grouping) {
@@ -357,37 +397,47 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
         getStatfarmerTheme() +
         labs(
           title = paste("Distribution of", y_var),
+          subtitle = if (want_letters && is.null(plot_status)) "CLD letters from Tukey" else plot_status,
           x = x_lab,
           y = y_var
         )
       if (use_color) p <- p + aes(color = !!sym(color_var)) + viridis::scale_color_viridis(discrete = TRUE, end = 0.9)
-      if (facet_ok) p <- applyStatfarmerFacet(p, facet_fml, ncol = facet_ncol)
+      if (facet_ok) p <- applyStatfarmerFacet(p, facet_fml, ncol = facet_ncol, data = data_to_plot)
 
-      # CLD letters as text above boxes (#12)
+      # CLD letters as text above boxes (#12) — driven by analysisResults$tukey
       if ("group_letter" %in% names(data_to_plot) && any(!is.na(data_to_plot$group_letter))) {
         grp_cols <- unique(c(x_var, if (use_color) color_var else NULL))
         grp_cols <- intersect(grp_cols, names(data_to_plot))
         letter_pos <- data_to_plot %>%
           dplyr::group_by(dplyr::across(dplyr::all_of(grp_cols))) %>%
           dplyr::summarise(
-            .y = max(!!sym(y_var), na.rm = TRUE),
+            .y = {
+              vals <- !!sym(y_var)
+              vals <- vals[is.finite(as.numeric(vals))]
+              if (length(vals) == 0L) NA_real_ else max(as.numeric(vals), na.rm = TRUE)
+            },
             group_letter = {
               vals <- group_letter[!is.na(group_letter)]
               if (length(vals)) as.character(vals[[1]]) else NA_character_
             },
             .groups = "drop"
           ) %>%
-          dplyr::filter(!is.na(group_letter))
-        if (nrow(letter_pos) > 0 && is.finite(max(letter_pos$.y, na.rm = TRUE))) {
+          dplyr::filter(!is.na(group_letter), is.finite(.y))
+        y_top <- if (nrow(letter_pos) > 0) suppressWarnings(max(letter_pos$.y, na.rm = TRUE)) else NA_real_
+        if (nrow(letter_pos) > 0 && is.finite(y_top)) {
           p <- p +
             ggplot2::geom_text(
               data = letter_pos,
               ggplot2::aes(x = !!sym(x_var), y = .y, label = group_letter),
               vjust = -0.4, size = 3.5, inherit.aes = FALSE
             ) +
-            ggplot2::expand_limits(y = max(letter_pos$.y, na.rm = TRUE) * 1.08)
+            ggplot2::expand_limits(y = y_top * 1.08)
         }
       }
+    }
+
+    if (!is.null(plot_status) && !want_letters) {
+      p <- p + ggplot2::theme(plot.subtitle = ggplot2::element_text(color = "#a94442", size = 10))
     }
     
     return(withBenchmark('Shiny:RenderPlot', p))
@@ -414,47 +464,73 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
     }
   )
   
-  # Perform statistical analysis (only recomputes when submit button pressed)
-  analysisResults <- reactive({
-    # Only recompute when submit button is pressed (not when filters change)
-    input$submit
-    
-    # Isolate all dependencies so they don't trigger recomputation
-    data <- isolate(filteredData())
-    out_var <- isolate(combined_inputs$out_variables)
-    anova_fac <- isolate(combined_inputs$anova_factors)
-    tukey_fac <- isolate(combined_inputs$tukey_factors)
-    force_method <- isolate({
-      if (!is.null(input$model_selection_method) && input$model_selection_method != 'auto') {
-        input$model_selection_method
-      } else {
-        NULL
-      }
-    })
-    
-    req(data)
-    req(out_var)
-    req(anova_fac)
-    
-    # Create formula
+  # ANOVA/Tukey only when Submit is clicked; skip entirely when design is unfit
+  analysisResults <- eventReactive(input$submit, {
+    data <- filteredData()
+    out_var <- combined_inputs$out_variables
+    anova_fac <- combined_inputs$anova_factors
+    tukey_fac <- combined_inputs$tukey_factors
+    force_method <- if (!is.null(input$model_selection_method) && input$model_selection_method != 'auto') {
+      input$model_selection_method
+    } else {
+      NULL
+    }
+
+    req(data, out_var)
+    req(nrow(data) > 0)
+
+    fitness <- assessAnovaFitness(data, anova_fac, out_var)
+    snapshot <- list(
+      n_rows = nrow(data),
+      out_var = out_var,
+      anova_fac = as.character(anova_fac),
+      tukey_fac = as.character(tukey_fac)
+    )
+    if (!isTRUE(fitness$ok)) {
+      cat("DEBUG analysisResults: SKIP ANOVA —", fitness$reason, "\n")
+      return(list(
+        anova = list(
+          success = FALSE,
+          skipped = TRUE,
+          error = fitness$reason,
+          cardinality = fitness$cardinality,
+          model = NULL,
+          anova_table = NULL
+        ),
+        tukey = NULL,
+        tukey_skip_reason = NULL,
+        formula = NULL,
+        status = fitness$reason,
+        snapshot = snapshot
+      ))
+    }
+
+    anova_fac <- fitness$factors
     formula_text <- formulate(out_var, anova_fac)
-    
-    cat("DEBUG analysisResults: COMPUTING ANOVA (only on submit button press)\n")
+    # Tukey only on factors that remain multi-level in filtered data
+    if (!is.null(tukey_fac)) {
+      tukey_fac <- intersect(as.character(tukey_fac), anova_fac)
+      if (length(tukey_fac) == 0L) tukey_fac <- anova_fac
+    }
+
+    if (isTRUE(getOption('statfarmer.debug', FALSE))) {
+      cat("DEBUG analysisResults: COMPUTING ANOVA (submit)\n")
+    }
     anova_results <- tryCatch({
       withBenchmark('Shiny:ANOVA', performANOVA(data, formula_text, out_var, force_method = force_method))
     }, error = function(e) {
-      list(success = FALSE, error = paste("ANOVA failed:", e$message))
+      list(success = FALSE, skipped = FALSE, error = paste("ANOVA failed:", e$message))
     })
-    
-    # Perform Tukey if ANOVA succeeded (skip for high-cardinality)
+
     tukey_results <- NULL
     tukey_skip_reason <- NULL
-    if (anova_results$success && !is.null(tukey_fac)) {
-      # Skip Tukey for ANY model with high cardinality (emmeans will be too slow)
+    if (isTRUE(anova_results$success) && !is.null(tukey_fac) && length(tukey_fac) > 0L) {
       max_card <- if (!is.null(anova_results$cardinality)) max(anova_results$cardinality, na.rm = TRUE) else 0
-      if (max_card > 20) {
-        tukey_skip_reason <- paste0("Skipped: too many factor levels (", max_card, ") for pairwise comparisons. ",
-                                    "Use the BLUP tab for genotype ranking, or growth summaries / effect sizes for high-cardinality factors.")
+      if (is.finite(max_card) && max_card > 20) {
+        tukey_skip_reason <- paste0(
+          "Skipped: too many factor levels (", max_card, ") for pairwise comparisons. ",
+          "Use the BLUP tab for genotype ranking, or growth summaries / effect sizes for high-cardinality factors."
+        )
       } else {
         tukey_results <- tryCatch({
           withBenchmark('Shiny:Tukey', performTukey(anova_results$model, tukey_fac))
@@ -463,13 +539,53 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
         })
       }
     }
-    
-    return(list(
+
+    list(
       anova = anova_results,
       tukey = tukey_results,
       tukey_skip_reason = tukey_skip_reason,
-      formula = formula_text
-    ))
+      formula = formula_text,
+      snapshot = list(
+        n_rows = nrow(data),
+        out_var = out_var,
+        anova_fac = as.character(anova_fac),
+        tukey_fac = as.character(tukey_fac)
+      ),
+      status = if (isTRUE(anova_results$success)) {
+        "Analysis OK"
+      } else if (!is.null(anova_results$error)) {
+        anova_results$error
+      } else {
+        "ANOVA failed"
+      }
+    )
+  }, ignoreNULL = TRUE)
+
+  output$analysis_status_banner <- renderUI({
+    ar <- tryCatch(analysisResults(), error = function(e) NULL)
+    if (is.null(ar)) {
+      return(tags$p(
+        style = "color:#666;font-size:12px;margin-top:6px;",
+        "Plot updates from filters anytime. Letters / ANOVA tables need Run analysis."
+      ))
+    }
+    if (isTRUE(ar$anova$skipped) || !isTRUE(ar$anova$success)) {
+      err <- if (!is.null(ar$anova$error)) ar$anova$error else ar$status
+      return(tags$div(
+        style = "background:#f2dede;border:1px solid #ebccd1;color:#a94442;padding:8px;margin-top:8px;border-radius:4px;font-size:12px;",
+        tags$strong("Skipped: "), err
+      ))
+    }
+    msg <- "ANOVA OK"
+    if (!is.null(ar$tukey) && isTRUE(ar$tukey$success)) {
+      msg <- "ANOVA + Tukey OK — letters on plot"
+    } else if (!is.null(ar$tukey_skip_reason)) {
+      msg <- ar$tukey_skip_reason
+    }
+    tags$div(
+      style = "background:#dff0d8;border:1px solid #d6e9c6;color:#3c763d;padding:8px;margin-top:8px;border-radius:4px;font-size:12px;",
+      tags$strong(msg)
+    )
   })
   
   # Raw data summary
@@ -594,6 +710,8 @@ createReactiveOutputs <- function(input, output, session, combined_inputs, filte
       }
       
       paste(info_lines, collapse = '\n')
+    } else if (isTRUE(analysisResults()$anova$skipped)) {
+      paste("ANOVA skipped (unfit design):", analysisResults()$anova$error)
     } else {
       paste("ANOVA failed:", analysisResults()$anova$error)
     }
